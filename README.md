@@ -10,8 +10,11 @@ This proof-of-concept demonstrates the Microsoft Agent Framework capabilities ac
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Frontend Chat Interface                  │
-│                    (Web/Mobile Application)                  │
+│            Frontend (Next.js + assistant-ui)                 │
+│                     (Port 3000)                              │
+│  - User authentication & JWT acquisition                     │
+│  - Chat interface with streaming support                     │
+│  - ExternalStoreRuntime for backend integration              │
 └────────────────────┬────────────────────────────────────────┘
                      │ User JWT Token
                      ↓
@@ -35,7 +38,16 @@ This proof-of-concept demonstrates the Microsoft Agent Framework capabilities ac
 │  - Validates OBO   │              │  - Validates OBO       │
 │  - Calls APIs as   │              │  - Calls APIs as       │
 │    original user   │              │    original user       │
-└────────────────────┘              └────────────────────────┘
+└────────────────────┘              └──────────┬─────────────┘
+                                               │ OBO Token
+                                               ↓
+                                    ┌──────────────────────────┐
+                                    │  Payroll API (Port 5100) │
+                                    │  - User-specific data    │
+                                    │  - JWT authentication    │
+                                    │  - Authorization checks  │
+                                    │  - Audit logging         │
+                                    └──────────────────────────┘
 ```
 
 ## Core Requirements
@@ -68,6 +80,23 @@ This proof-of-concept demonstrates the Microsoft Agent Framework capabilities ac
 af-poc/
 ├── README.md                           # This file - overall project plan
 │
+├── frontend/                           # 🎨 Frontend (Port 3000)
+│   ├── README.md                      # Frontend documentation
+│   ├── package.json                   # npm dependencies
+│   ├── app/
+│   │   ├── page.tsx                  # Main chat page
+│   │   └── layout.tsx                # Root layout
+│   ├── components/
+│   │   ├── chat/
+│   │   │   └── ChatInterface.tsx     # Custom chat component
+│   │   └── assistant-ui/             # UI components from assistant-ui
+│   ├── lib/
+│   │   ├── api-client.ts             # Backend API client with JWT
+│   │   ├── runtime.ts                # Custom ExternalStoreRuntime
+│   │   ├── auth.ts                   # Token management utilities
+│   │   └── utils.ts                  # Helper functions
+│   └── .env.local                    # Environment variables
+│
 ├── orchestrator/                       # ⭐ ORCHESTRATOR SERVICE (Port 3000)
 │   ├── README.md                      # Orchestrator implementation details
 │   ├── pyproject.toml                 # UV configuration
@@ -91,20 +120,38 @@ af-poc/
 │   │   └── (future: agent.py, auth.py for Phase 2+)
 │   └── tests/
 │
-└── dotnet-agent/                       # .NET Sub-Agent (Port 5000)
-    ├── README.md                      # .NET-specific plan & details
-    ├── AgentService.sln               # Solution file
-    ├── AgentService/
-    │   ├── Program.cs                # ASP.NET Core setup
+├── dotnet-agent/                       # .NET Sub-Agent (Port 5000)
+│   ├── README.md                      # .NET-specific plan & details
+│   ├── AgentService.sln               # Solution file
+│   ├── AgentService/
+│   │   ├── Program.cs                # ASP.NET Core setup
+│   │   ├── Controllers/
+│   │   │   └── AgentController.cs    # /agent endpoint
+│   │   ├── Models/
+│   │   │   ├── AgentRequest.cs
+│   │   │   └── AgentResponse.cs
+│   │   ├── Services/
+│   │   │   ├── IAgentService.cs
+│   │   │   └── AgentService.cs
+│   │   └── AgentService.csproj
+│   └── (future: tests/)
+│
+└── dotnet-payroll-api/                 # 🔒 Payroll API (Port 5100)
+    ├── README.md                      # Payroll API documentation
+    ├── PayrollApi.sln                 # Solution file
+    ├── PayrollApi/
+    │   ├── Program.cs                # ASP.NET Core setup with JWT auth
+    │   ├── appsettings.json          # Configuration
     │   ├── Controllers/
-    │   │   └── AgentController.cs    # /agent endpoint
+    │   │   └── PayrollController.cs  # /payroll/user-info & /payroll/user-pto
     │   ├── Models/
-    │   │   ├── AgentRequest.cs
-    │   │   └── AgentResponse.cs
+    │   │   ├── UserInfo.cs           # User information model
+    │   │   ├── UserPto.cs            # PTO balance model
+    │   │   └── ErrorResponse.cs      # Error response model
     │   ├── Services/
-    │   │   ├── IAgentService.cs
-    │   │   └── AgentService.cs
-    │   └── AgentService.csproj
+    │   │   ├── IPayrollDataService.cs
+    │   │   └── PayrollDataService.cs # Hardcoded test data
+    │   └── PayrollApi.csproj
     └── (future: tests/)
 ```
 
@@ -156,14 +203,37 @@ af-poc/
 - [ ] Create deployment configurations
 - [ ] Add monitoring and alerting
 
-### Phase 6: Frontend Integration
-- [ ] Create simple chat interface
-- [ ] Implement user authentication flow
-- [ ] Connect to orchestrator `/agent` endpoint
+### Phase 6: Frontend Integration ✅ COMPLETE
+- [x] Create Next.js frontend with assistant-ui
+- [x] Implement ExternalStoreRuntime for backend integration
+- [x] Add JWT token management utilities
+- [x] Build chat interface with streaming support
+- [x] Create API client with token injection
+- [ ] Connect to orchestrator service
+- [ ] Implement user authentication flow (Azure AD)
 - [ ] Display multi-agent conversation flow
 - [ ] Show which sub-agent handled each request
 
+### Phase 7: Payroll API Integration ✅ COMPLETE
+- [x] Create secure payroll API with JWT authentication
+- [x] Implement user-specific data endpoints
+- [x] Add authorization checks (oid claim validation)
+- [x] Hardcode test data for 5 users
+- [x] Add audit logging for security events
+- [ ] Integrate with .NET agent
+- [ ] Test full OBO flow: Frontend → Orchestrator → .NET Agent → Payroll API
+- [ ] Verify user identity preserved throughout chain
+
 ## Technology Stack
+
+### Frontend
+- **Framework**: Next.js 15+ (React 19)
+- **UI Library**: [assistant-ui](https://github.com/assistant-ui/assistant-ui)
+- **Runtime**: ExternalStoreRuntime for custom backend integration
+- **Styling**: Tailwind CSS
+- **Language**: TypeScript
+- **Features**: Streaming SSE support, JWT token management
+- **Port**: 3000
 
 ### Orchestrator Service (Python)
 - **Package Manager**: UV
@@ -171,6 +241,7 @@ af-poc/
 - **Authentication**: `msal` (MSAL Python), `python-jose[cryptography]`
 - **HTTP Client**: `httpx` (async)
 - **Configuration**: `pydantic-settings`
+- **Port**: 3000 (same as frontend - will need port change)
 
 ### Python Sub-Agent
 - **Package Manager**: UV
@@ -182,12 +253,21 @@ af-poc/
   - OpenAI-compatible APIs (LM Studio, vLLM, etc.)
 - **Authentication** (Phase 3): `msal`, `python-jose`
 - **Azure SDK**: `azure-identity`, `httpx`
+- **Port**: 8000
 
 ### .NET Sub-Agent
 - **Framework**: .NET 8+ / ASP.NET Core
 - **Agent Framework** (Phase 3): `Azure.AI.Agents` NuGet
 - **Authentication** (Phase 2): `Microsoft.Identity.Web`, `Microsoft.Identity.Client`
 - **Web API**: ASP.NET Core Web API
+- **Port**: 5000
+
+### Payroll API (.NET)
+- **Framework**: .NET 8 (LTS) / ASP.NET Core Web API
+- **Authentication**: `Microsoft.Identity.Web` (3.2.1), `Microsoft.AspNetCore.Authentication.JwtBearer` (8.0.11)
+- **Features**: JWT validation, user-specific data access, audit logging
+- **Security**: OID claim validation, cross-user access prevention
+- **Ports**: HTTP 5100, HTTPS 5101
 
 ## OBO Flow Explained
 
@@ -222,10 +302,13 @@ User (JWT) → Orchestrator (validates JWT)
 
 | Component | Port | Role | Token Handling |
 |-----------|------|------|----------------|
-| **Frontend** | - | User authentication | Obtains user JWT from Azure AD |
-| **Orchestrator** | 3000 | Token exchange | Validates user JWT, acquires OBO tokens |
+| **Frontend** | 3000 | User authentication | Obtains user JWT from Azure AD |
+| **Orchestrator** | 3000* | Token exchange | Validates user JWT, acquires OBO tokens |
 | **Python Agent** | 8000 | Specialized work | Validates OBO token, executes as user |
 | **.NET Agent** | 5000 | Specialized work | Validates OBO token, executes as user |
+| **Payroll API** | 5100 | User data access | Validates OBO token, enforces user authorization |
+
+_*Note: Orchestrator and Frontend both use port 3000 - port conflict will be resolved in integration phase_
 
 ## Security Considerations
 
@@ -241,7 +324,14 @@ User (JWT) → Orchestrator (validates JWT)
 
 ### Running All Services
 
-**Terminal 1: Python Sub-Agent** (uses Claude CLI by default)
+**Terminal 1: Frontend** (Next.js with assistant-ui)
+```bash
+cd frontend
+npm install  # First time only
+npm run dev  # Runs on port 3000
+```
+
+**Terminal 2: Python Sub-Agent** (uses Claude CLI by default)
 ```bash
 cd python-agent
 source .venv/bin/activate  # Already initialized with uv
@@ -251,55 +341,94 @@ uvicorn src.main:app --reload --port 8000
 # To switch backends, edit src/agent.py line 149
 ```
 
-**Terminal 2: .NET Sub-Agent**
+**Terminal 3: .NET Sub-Agent**
 ```bash
 cd dotnet-agent
 dotnet run --project AgentService  # Runs on port 5000
 ```
 
-**Terminal 3: Orchestrator**
+**Terminal 4: Payroll API**
+```bash
+cd dotnet-payroll-api
+dotnet run  # Runs on port 5100 (HTTP) and 5101 (HTTPS)
+```
+
+**Terminal 5: Orchestrator**
 ```bash
 cd orchestrator
 source .venv/bin/activate  # Already initialized with uv
-uvicorn src.main:app --reload --port 3000
+uvicorn src.main:app --reload --port 3001  # Changed to avoid port conflict with frontend
 ```
 
 ### Testing the Flow
 
+**Frontend Testing:**
+```bash
+# Open browser to http://localhost:3000
+# Use the chat interface to interact with the backend
+```
+
+**Orchestrator Testing:**
 ```bash
 # Check all services are healthy
-curl http://localhost:3000/health/agents
+curl http://localhost:3001/health/agents
 
 # Test orchestration (will auto-select Python agent)
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:3001/agent \
   -H "Content-Type: application/json" \
   -d '{"message": "Help me with pandas dataframes"}'
 
 # Test orchestration (will auto-select .NET agent)
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:3001/agent \
   -H "Content-Type: application/json" \
   -d '{"message": "Help me with ASP.NET Core"}'
 
 # Explicit agent selection
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:3001/agent \
   -H "Content-Type: application/json" \
   -d '{"message": "Test", "preferred_agent": "python"}'
+```
+
+**Payroll API Testing (without auth):**
+```bash
+# Get user info (returns Alice Johnson's data in testing mode)
+curl http://localhost:5100/payroll/user-info
+
+# Get PTO balance
+curl http://localhost:5100/payroll/user-pto
+
+# Health check
+curl http://localhost:5100/health
 ```
 
 ## Getting Started
 
 See detailed implementation guides:
+- [**Frontend**](./frontend/README.md) 🎨 **Chat interface with assistant-ui**
 - [**Orchestrator Service**](./orchestrator/README.md) ⭐ **Start here for OBO flow**
 - [Python Sub-Agent](./python-agent/README.md)
 - [.NET Sub-Agent](./dotnet-agent/README.md)
+- [Payroll API](./dotnet-payroll-api/README.md) 🔒 **Secure user data access**
 
 ## References
 
+### Agent Framework & Orchestration
 - [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
 - [Microsoft Agent Framework User Guide](https://learn.microsoft.com/en-us/agent-framework/user-guide/overview)
+
+### Authentication & Security
 - [OAuth 2.0 On-Behalf-Of Flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow)
 - [MSAL.NET OBO Documentation](https://learn.microsoft.com/en-us/entra/msal/dotnet/acquiring-tokens/web-apps-apis/on-behalf-of-flow)
+- [Microsoft.Identity.Web Documentation](https://learn.microsoft.com/en-us/entra/msal/dotnet/microsoft-identity-web/)
+
+### Frontend & UI
+- [assistant-ui](https://github.com/assistant-ui/assistant-ui)
+- [assistant-ui Documentation](https://www.assistant-ui.com/docs)
+- [ExternalStoreRuntime](https://www.assistant-ui.com/docs/runtimes/custom/external-store)
+
+### Tools & Package Managers
 - [UV Package Manager](https://github.com/astral-sh/uv)
+- [Next.js Documentation](https://nextjs.org/docs)
 
 ## License
 
