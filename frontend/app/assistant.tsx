@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { AssistantRuntimeProvider, useLocalRuntime, type ChatModelAdapter } from "@assistant-ui/react";
 import { Thread } from "@/components/assistant-ui/thread";
 import {
@@ -22,16 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
 export const Assistant = () => {
-  const { isAuthenticated, user, login, logout, getToken, status } = useAuth();
-
-  // Check for auth errors in URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const error = params.get('error');
-    if (error) {
-      console.error('Auth error from URL:', error);
-    }
-  }, []);
+  const { isAuthenticated, user, login, logout, getToken, inProgress } = useAuth();
 
   // Custom adapter for orchestrator backend with auth
   const orchestratorAdapter: ChatModelAdapter = {
@@ -85,13 +75,13 @@ export const Assistant = () => {
 
   const runtime = useLocalRuntime(orchestratorAdapter);
 
-  // Show loading screen while checking authentication
-  if (status === "loading") {
+  // Show loading screen during authentication
+  if (inProgress === "login") {
     return (
       <div className="flex h-dvh w-full items-center justify-center">
         <div className="text-center space-y-4">
-          <h1 className="text-2xl font-bold">Loading...</h1>
-          <p className="text-muted-foreground">Checking authentication status</p>
+          <h1 className="text-2xl font-bold">Signing in...</h1>
+          <p className="text-muted-foreground">Redirecting to Microsoft login</p>
         </div>
       </div>
     );
@@ -138,7 +128,7 @@ export const Assistant = () => {
               </Breadcrumb>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
-                  {user?.name || user?.email}
+                  {user?.name || user?.username}
                 </span>
                 <Button variant="outline" size="sm" onClick={logout}>
                   Sign Out
