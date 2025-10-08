@@ -99,12 +99,15 @@ uvicorn src.main:app --reload --port 8000
 cp .env.example .env
 
 # Edit .env with your configuration
-# Required variables:
-# - AZURE_TENANT_ID
-# - AZURE_CLIENT_ID
-# - AZURE_CLIENT_SECRET
+# Optional variables:
 # - AZURE_OPENAI_ENDPOINT
 # - AZURE_OPENAI_DEPLOYMENT
+# - AZURE_OPENAI_API_KEY
+# - AGENT_NAME
+# - AGENT_INSTRUCTIONS
+# - API_PORT
+# - API_HOST
+# - REQUIRE_AUTH
 ```
 
 ### Running the Service
@@ -219,64 +222,90 @@ class AgentService:
         self.claude_sessions: Dict[str, str] = {}  # conversation_id -> session_id
 
     async def run_shell_agent(self, message: str, conversation_id: Optional[str] = None) -> str:
-        """Run Claude CLI and return output (DEFAULT BACKEND)"""
-        args = ["claude", "-p", message, "--output-format", "json"]
+        """Run Claude Code in headless mode using the CLI (DEFAULT BACKEND)"""
+        args = ["claude", "-p", "--output-format", "json"]
 
         session_id = self.claude_sessions.get(conversation_id) if conversation_id else None
         if session_id:
             args.extend(["--resume", session_id])
 
+        process_env = os.environ.copy()
+
         process = await asyncio.create_subprocess_exec(
             *args,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=os.environ.copy(),
+            env=process_env,
         )
 
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await process.communicate(input=message.encode())
 
         if process.returncode != 0:
             return f"Error invoking Claude: {stderr.decode().strip()}"
 
-        payload = json.loads(stdout.decode())
-        response_text = payload.get("result") or stdout.decode().strip()
+        try:
+            payload = json.loads(stdout.decode())
+            response_text = payload.get("result", "")
 
-        # Store session for conversation continuity
-        if new_session := payload.get("session_id"):
-            self.claude_sessions[conversation_id] = new_session
+            if not response_text:
+                response_text = stdout.decode().strip()
+
+            # Store session for conversation continuity
+            new_session = payload.get("session_id")
+            if new_session and conversation_id:
+                self.claude_sessions[conversation_id] = new_session
+        except json.JSONDecodeError:
+            response_text = stdout.decode().strip()
 
         return response_text
 
     async def run_local_llm_http(self, message: str, conversation_id: Optional[str] = None) -> str:
         """Call local LLM via HTTP (Ollama)"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "http://localhost:11434/api/generate",
-                json={"model": "llama2", "prompt": message, "stream": False}
-            )
-            return response.json().get("response", "No response")
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "http://localhost:11434/api/generate",
+                    json={"model": "llama2", "prompt": message, "stream": False}
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("response", "No response from local LLM")
+        except httpx.ConnectError:
+            return "Error: Could not connect to local LLM at http://localhost:11434"
+        except Exception as e:
+            return f"Error calling local LLM: {str(e)}"
 
     async def run_openai_compatible(self, message: str, conversation_id: Optional[str] = None) -> str:
         """Use OpenAI-compatible API (LM Studio, vLLM, etc.)"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "http://localhost:1234/v1/chat/completions",
-                json={
-                    "model": "local-model",
-                    "messages": [
-                        {"role": "system", "content": settings.agent_instructions},
-                        {"role": "user", "content": message}
-                    ]
-                }
-            )
-            return response.json()["choices"][0]["message"]["content"]
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "http://localhost:1234/v1/chat/completions",
+                    json={
+                        "model": "local-model",
+                        "messages": [
+                            {"role": "system", "content": settings.agent_instructions},
+                            {"role": "user", "content": message}
+                        ],
+                        "temperature": 0.7,
+                    },
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+        except httpx.ConnectError:
+            return "Error: Could not connect to OpenAI-compatible endpoint at http://localhost:1234"
+        except Exception as e:
+            return f"Error calling OpenAI-compatible API: {str(e)}"
 
     async def run_agent(self, message: str, conversation_id: Optional[str] = None) -> str:
         """Main entry point - currently uses Claude CLI backend"""
         return await self.run_shell_agent(message, conversation_id)
 ```
 
-**Backend Switching**: Change line 149 in `src/agent.py`:
+**Backend Switching**: Change line 184 in `src/agent.py`:
 - `return await self.run_shell_agent(message, conversation_id)` ← **Current (Claude CLI)**
 - `return await self.run_local_llm_http(message, conversation_id)`
 - `return await self.run_openai_compatible(message, conversation_id)`
@@ -284,32 +313,32 @@ class AgentService:
 **File: `src/config.py`**
 ```python
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
-    """Application configuration"""
-
-    # Azure AD Configuration
-    AZURE_TENANT_ID: str = ""
-    AZURE_CLIENT_ID: str = ""
-    AZURE_CLIENT_SECRET: str = ""
+    """Application settings loaded from environment variables."""
 
     # Azure OpenAI Configuration
-    AZURE_OPENAI_ENDPOINT: str = ""
-    AZURE_OPENAI_DEPLOYMENT: str = ""
-    AZURE_OPENAI_API_VERSION: str = "2024-02-15-preview"
+    azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
+    azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
+
+    # Agent Configuration
+    agent_name: str = os.getenv("AGENT_NAME", "PythonSpecializedAgent")
+    agent_instructions: str = os.getenv(
+        "AGENT_INSTRUCTIONS",
+        "You are a specialized Python agent that helps with data analysis, machine learning, and Python ecosystem tasks.",
+    )
 
     # API Configuration
-    API_PORT: int = 8000
-    API_HOST: str = "0.0.0.0"
-
-    # JWT Configuration
-    JWT_ALGORITHM: str = "RS256"
-    JWT_AUDIENCE: str = ""  # Your API's App ID URI
-    JWT_ISSUER: str = ""    # Azure AD issuer URL
+    api_port: int = int(os.getenv("API_PORT", "8000"))
+    api_host: str = os.getenv("API_HOST", "0.0.0.0")
+    require_auth: bool = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
 
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        extra = "ignore"  # Ignore extra fields in .env file
 
 settings = Settings()
 ```
@@ -502,23 +531,20 @@ async def agent_endpoint(
 Create a `.env` file:
 
 ```bash
-# Azure AD Configuration
-AZURE_TENANT_ID=your-tenant-id
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-client-secret
-
-# Azure OpenAI
+# Azure OpenAI Configuration
 AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com
 AZURE_OPENAI_DEPLOYMENT=gpt-4
 AZURE_OPENAI_API_VERSION=2024-02-15-preview
+AZURE_OPENAI_API_KEY=your-api-key
 
-# JWT Configuration
-JWT_AUDIENCE=api://your-api-id
-JWT_ISSUER=https://login.microsoftonline.com/{tenant-id}/v2.0
+# Agent Configuration
+AGENT_NAME=PythonSpecializedAgent
+AGENT_INSTRUCTIONS=You are a specialized Python agent that helps with data analysis, machine learning, and Python ecosystem tasks.
 
 # API Configuration
 API_PORT=8000
 API_HOST=0.0.0.0
+REQUIRE_AUTH=false
 ```
 
 ## Development Commands

@@ -1,6 +1,6 @@
 # Assistant-UI Frontend for Backend Agenting Framework POC
 
-A Next.js frontend built with [assistant-ui](https://github.com/assistant-ui/assistant-ui) that integrates with a custom backend agenting framework using ExternalStoreRuntime for full control over backend integration and JWT authentication.
+A Next.js frontend built with [assistant-ui](https://github.com/assistant-ui/assistant-ui) that integrates with a custom orchestrator backend using `useLocalRuntime` and a custom `ChatModelAdapter` for seamless communication.
 
 ## 🚀 Quick Start
 
@@ -12,13 +12,13 @@ npm install
 
 ### 2. Configure Environment
 
-The `.env.local` file is already configured with:
+Create or update `.env.local`:
 
 ```bash
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+ORCHESTRATOR_URL=http://localhost:3001
 ```
 
-Update this URL to point to your backend agenting framework when ready.
+This points to the orchestrator service (default port 3001).
 
 ### 3. Run Development Server
 
@@ -28,113 +28,227 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to see the chat interface.
 
+> **Note**: Make sure the orchestrator service is running on port 3001 before testing.
+
 ## 📁 Project Structure
 
 ```
 frontend/
 ├── app/
-│   ├── page.tsx              # Main chat page
-│   └── layout.tsx            # Root layout
+│   ├── page.tsx              # Main entry point (renders Assistant component)
+│   ├── assistant.tsx         # Main chat UI with useLocalRuntime integration
+│   ├── layout.tsx            # Root layout
+│   └── api/
+│       └── chat/
+│           └── route.ts      # Next.js API route (proxy to orchestrator)
 ├── components/
-│   ├── chat/
-│   │   └── ChatInterface.tsx # Custom chat component
-│   └── assistant-ui/         # UI components from assistant-ui
-├── lib/
-│   ├── api-client.ts         # Backend API client with JWT
-│   ├── runtime.ts            # Custom ExternalStoreRuntime
-│   ├── auth.ts               # Token management utilities
-│   └── utils.ts              # Helper functions
-└── .env.local                # Environment variables
+│   ├── assistant-ui/         # UI components from assistant-ui library
+│   │   ├── thread.tsx        # Main chat thread component
+│   │   ├── markdown-text.tsx # Message rendering with markdown
+│   │   └── ...               # Other UI components
+│   └── ui/                   # shadcn/ui components
+│       ├── sidebar.tsx
+│       ├── breadcrumb.tsx
+│       └── ...
+└── .env.local                # Environment variables (ORCHESTRATOR_URL)
 ```
 
 ## 🔑 Key Features
 
-- **Custom Backend Integration**: Uses ExternalStoreRuntime for full control over API calls
-- **JWT Authentication**: Built-in token management via BackendApiClient
-- **Streaming Support**: Parses SSE format responses from backend
+- **useLocalRuntime Integration**: Uses assistant-ui's native runtime for custom backends
+- **ChatModelAdapter Pattern**: Clean separation between UI and backend communication
+- **Server-Side Proxy**: Next.js API route handles orchestrator communication
+- **Simple JSON Responses**: No complex streaming protocols needed
 - **TypeScript**: Full type safety throughout
-- **Tailwind CSS**: Modern, responsive styling
+- **Tailwind CSS + shadcn/ui**: Modern, accessible styling
 
 ## 🔧 Architecture
 
-### Backend API Client (`lib/api-client.ts`)
-- Handles HTTP requests to backend
-- Injects JWT tokens automatically
-- Configurable base URL
+### How It Works
 
-### Custom Runtime (`lib/runtime.ts`)
-- Manages message state with React
-- Handles streaming responses from backend
-- Parses SSE format: `data: {"type": "content", "delta": "..."}`
+The frontend uses a three-layer architecture:
 
-### Chat Interface (`components/chat/ChatInterface.tsx`)
-- Main chat UI component
-- Integrates runtime with AssistantRuntimeProvider
-- Accepts optional `initialToken` prop for JWT
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Browser (React Components)                                  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Assistant Component (app/assistant.tsx)              │  │
+│  │  - useLocalRuntime(orchestratorAdapter)               │  │
+│  │  - Manages chat state client-side                     │  │
+│  │  - Renders Thread component                           │  │
+│  └────────────────────┬─────────────────────────────────┘  │
+└────────────────────────┼────────────────────────────────────┘
+                         │ fetch("/api/chat", { messages })
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Next.js Server (Node.js)                                    │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  API Route (app/api/chat/route.ts)                    │  │
+│  │  - Extracts user message from messages array          │  │
+│  │  - Proxies to orchestrator backend                    │  │
+│  │  - Returns JSON: {content, metadata}                  │  │
+│  └────────────────────┬─────────────────────────────────┘  │
+└────────────────────────┼────────────────────────────────────┘
+                         │ POST /agent
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Orchestrator Service (Python FastAPI - Port 3001)          │
+│  - Receives message                                          │
+│  - Selects appropriate agent (Python/.NET)                  │
+│  - Returns response with agent metadata                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+#### 1. ChatModelAdapter (`app/assistant.tsx:22-58`)
+
+The `orchestratorAdapter` implements the `ChatModelAdapter` interface:
+
+```typescript
+const orchestratorAdapter: ChatModelAdapter = {
+  async run({ messages, abortSignal }) {
+    // Calls /api/chat (Next.js route, not orchestrator directly)
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+      signal: abortSignal,
+    });
+
+    const data = await response.json();
+
+    // Returns assistant-ui compatible format
+    return {
+      content: [{ type: "text", text: data.content }]
+    };
+  }
+};
+```
+
+**Key Points:**
+- Implements `async run()` method that returns `ChatModelRunResult`
+- Receives `messages` array containing conversation history
+- Supports abort signals for cancellation
+- Returns content as array of message parts (text, tool calls, etc.)
+
+#### 2. useLocalRuntime Hook (`app/assistant.tsx:62`)
+
+```typescript
+const runtime = useLocalRuntime(orchestratorAdapter);
+```
+
+**What it does:**
+- Manages conversation state (messages, loading states, etc.)
+- Calls the adapter's `run()` method when user sends a message
+- Handles optimistic updates and error states
+- Provides React hooks for accessing chat state
+
+**Why useLocalRuntime:**
+- No dependency on Vercel AI SDK or specific LLM providers
+- Full control over backend communication
+- Works with any HTTP API that returns text
+- Simpler than ExternalStoreRuntime for basic use cases
+
+#### 3. Next.js API Route (`app/api/chat/route.ts`)
+
+**Simple JSON proxy:**
+
+```typescript
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const userMessage = messages[messages.length - 1]?.content;
+
+  // Call orchestrator
+  const response = await fetch(`${ORCHESTRATOR_URL}/agent`, {
+    method: "POST",
+    body: JSON.stringify({ message: userMessage })
+  });
+
+  const data = await response.json();
+
+  // Return simple JSON response
+  return Response.json({
+    content: data.message,
+    metadata: { agent: data.selected_agent, status: data.status }
+  });
+}
+```
+
+**Benefits of this pattern:**
+- Server-side only - JWT tokens can be injected securely
+- Request/response transformation without client changes
+- Error handling and retry logic in one place
+- CORS and network issues handled server-side
 
 ## 🔌 Backend Integration
 
-Your backend should expose an endpoint that:
+### Expected API Contract
 
-1. **Accepts POST requests** to `/chat`:
-   ```json
-   {
-     "messages": [
-       { "role": "user", "content": "Hello" },
-       { "role": "assistant", "content": "Hi!" }
-     ]
-   }
-   ```
+The `/api/chat` route expects the orchestrator to expose a `/agent` endpoint:
 
-2. **Returns streaming responses** (SSE format):
-   ```
-   data: {"type": "content", "delta": "Hello"}
-   data: {"type": "content", "delta": " world"}
-   data: {"type": "done"}
-   ```
+**Request:**
+```bash
+POST http://localhost:3001/agent
+Content-Type: application/json
 
-3. **Validates JWT tokens** in Authorization header:
-   ```
-   Authorization: Bearer <jwt-token>
-   ```
-
-4. **Handles CORS** for development:
-   ```
-   Access-Control-Allow-Origin: http://localhost:3000
-   ```
-
-## 🔐 Authentication
-
-### Token Management
-
-The `lib/auth.ts` provides utilities for JWT handling:
-
-```typescript
-import { getTokenFromCookie, setTokenCookie } from '@/lib/auth';
-
-// Get token from cookie
-const token = getTokenFromCookie();
-
-// Set token in cookie
-setTokenCookie('your-jwt-token');
+{
+  "message": "What is the weather?",
+  "conversation_id": null,
+  "preferred_agent": "auto",
+  "metadata": {}
+}
 ```
 
-### Using with ChatInterface
-
-```typescript
-import { ChatInterface } from '@/components/chat/ChatInterface';
-
-export default function Page() {
-  return <ChatInterface initialToken="your-jwt-token" />;
+**Response:**
+```json
+{
+  "message": "The weather is sunny.",
+  "selected_agent": "python",
+  "status": "success",
+  "conversation_id": "uuid-here"
 }
+```
+
+### Message Flow
+
+1. **User sends message** via assistant-ui Thread component
+2. **useLocalRuntime** calls `orchestratorAdapter.run({ messages })`
+3. **Adapter** sends POST to `/api/chat` with messages array
+4. **API route** extracts last user message and forwards to orchestrator
+5. **Orchestrator** processes and returns response
+6. **API route** transforms to `{content, metadata}` format
+7. **Adapter** returns to useLocalRuntime as `{content: [{type: "text", text: "..."}]}`
+8. **assistant-ui** renders the message in the UI
+
+## 🔐 Authentication (Future)
+
+JWT authentication will be added in Phase 2. The architecture will support:
+
+1. **Token acquisition** in browser via Azure AD/MSAL.js
+2. **Token storage** in HTTP-only cookies (secure)
+3. **Token injection** in `/api/chat` route before forwarding to orchestrator
+4. **OBO flow** in orchestrator to call sub-agents
+
+**Future implementation:**
+```typescript
+// In app/api/chat/route.ts
+const token = cookies().get('auth_token')?.value;
+
+const response = await fetch(`${orchestratorUrl}/agent`, {
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ message: userMessage })
+});
 ```
 
 ## 📚 Documentation
 
-- **Full Implementation Plan**: See `IMPLEMENTATION_PLAN.md`
-- **Implementation Summary**: See `IMPLEMENTATION_SUMMARY.md`
 - **Assistant-UI Docs**: https://www.assistant-ui.com/docs
-- **ExternalStoreRuntime**: https://www.assistant-ui.com/docs/runtimes/custom/external-store
+- **useLocalRuntime**: https://www.assistant-ui.com/docs/runtimes/custom/local
+- **ChatModelAdapter**: Custom backend integration pattern
+- **Next.js API Routes**: https://nextjs.org/docs/app/building-your-application/routing/route-handlers
 
 ## 🛠️ Development
 
@@ -150,31 +264,36 @@ npm run lint     # Run ESLint
 ### Customizing the UI
 
 All assistant-ui components are in `components/assistant-ui/` and can be customized:
-- `thread.tsx` - Main chat thread
-- `markdown-text.tsx` - Message rendering
-- `attachment.tsx` - File attachments
+- `thread.tsx` - Main chat thread component
+- `markdown-text.tsx` - Message rendering with markdown support
+- `threadlist-sidebar.tsx` - Conversation history sidebar
 - And more...
 
-## 🚧 Current Status: Phase 1 Complete
+**Styling**: Uses Tailwind CSS with shadcn/ui components. Customize in `tailwind.config.ts`.
+
+## 🚧 Current Status: Integrated with Orchestrator
 
 ✅ **Completed:**
-- Project initialization with assistant-ui
-- Custom runtime with streaming support
-- Backend API client with JWT
-- Chat interface component
-- Token management utilities
+- ✅ Next.js project with assistant-ui
+- ✅ useLocalRuntime with ChatModelAdapter pattern
+- ✅ Next.js API route proxy to orchestrator
+- ✅ Simple JSON request/response handling
+- ✅ Agent metadata display in messages
+- ✅ Thread UI with markdown rendering
 
-🔜 **Next Steps (Phase 2):**
-- Connect to real backend agenting framework
-- Implement full JWT authentication flow
-- Add error handling and retry logic
-- Create API route proxy if needed
+🔜 **Next Steps:**
+- [ ] Add JWT authentication with Azure AD
+- [ ] Token injection in API route
+- [ ] Error handling and retry logic
+- [ ] Streaming support for real-time responses
+- [ ] Loading states and optimistic updates
 
-🎯 **Future (Phase 3):**
-- Multi-thread support
-- Message persistence
-- Advanced agent visualizations
-- Production deployment
+🎯 **Future Enhancements:**
+- [ ] Multi-thread support (conversation history)
+- [ ] Message persistence (database)
+- [ ] Tool calling UI (if agents use tools)
+- [ ] Agent visualization (show which agent responded)
+- [ ] Production deployment
 
 ## 🤝 Contributing
 

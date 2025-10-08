@@ -25,7 +25,7 @@ This orchestrator demonstrates:
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                  ORCHESTRATOR SERVICE                        │
-│                  (This Service - Port 3000)                  │
+│                  (This Service - Port 8001)                  │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │ 1. JWT Validator                                     │  │
@@ -179,10 +179,10 @@ DOTNET_AGENT_SCOPES=["api://dotnet-agent-id/.default"]
 
 ```bash
 # Development mode with auto-reload
-uv run uvicorn src.main:app --reload --port 3000
+uv run uvicorn src.main:app --reload --port 8001
 
 # Production mode
-uv run uvicorn src.main:app --host 0.0.0.0 --port 3000 --workers 4
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8001 --workers 4
 
 # Or using Python directly
 uv run python -m src.main
@@ -243,7 +243,7 @@ The primary endpoint demonstrating the complete OBO flow.
 
 **With Authentication** (when REQUIRE_AUTH=true):
 ```bash
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:8001/agent \
   -H "Authorization: Bearer YOUR_USER_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -254,7 +254,7 @@ curl -X POST http://localhost:3000/agent \
 
 **Without Authentication** (testing mode, REQUIRE_AUTH=false):
 ```bash
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:8001/agent \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Help me with C# and ASP.NET",
@@ -507,7 +507,7 @@ uv run pytest
 uv run pytest --cov=src --cov-report=html
 
 # Check sub-agent health
-curl http://localhost:3000/health/agents
+curl http://localhost:8001/health/agents
 ```
 
 ## Example Usage Scenarios
@@ -518,10 +518,10 @@ curl http://localhost:3000/health/agents
 # 1. Start all services
 # Terminal 1: Python agent (port 8000)
 # Terminal 2: .NET agent (port 5000)
-# Terminal 3: Orchestrator (port 3000)
+# Terminal 3: Orchestrator (port 8001)
 
 # 2. Test orchestrator
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:8001/agent \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Help me with pandas",
@@ -541,7 +541,7 @@ curl -X POST http://localhost:3000/agent \
 USER_JWT="eyJ0eXAiOiJKV1QiLCJhbGc..."
 
 # 2. Call orchestrator with user JWT
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:8001/agent \
   -H "Authorization: Bearer $USER_JWT" \
   -H "Content-Type: application/json" \
   -d '{
@@ -563,7 +563,7 @@ curl -X POST http://localhost:3000/agent \
 
 ```bash
 # Force .NET agent even with Python keywords
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:8001/agent \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Help me with pandas",

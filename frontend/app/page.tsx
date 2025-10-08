@@ -1,5 +1,5 @@
-import { ChatInterface } from "@/components/chat/ChatInterface";
+import { Assistant } from "./assistant";
 
 export default function Home() {
-  return <ChatInterface />;
+  return <Assistant />;
 }

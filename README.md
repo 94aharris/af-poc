@@ -8,6 +8,8 @@ This proof-of-concept demonstrates the Microsoft Agent Framework capabilities ac
 
 ## Architecture
 
+### High-Level Flow
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │            Frontend (Next.js + assistant-ui)                 │
@@ -61,6 +63,7 @@ This proof-of-concept demonstrates the Microsoft Agent Framework capabilities ac
 ## Key Features
 
 ### Agent Framework Capabilities
+
 - **Graph-based Workflows**: Connect agents with data flow pipelines
 - **Multi-Language Support**: Consistent APIs across Python and .NET
 - **Built-in Observability**: OpenTelemetry integration
@@ -68,6 +71,7 @@ This proof-of-concept demonstrates the Microsoft Agent Framework capabilities ac
 - **Credential Management**: Azure identity integration
 
 ### JWT On-Behalf-Of (OBO) Flow
+
 - **Token Delegation**: Orchestrator exchanges user JWT for delegated access tokens
 - **Identity Preservation**: Sub-agents call APIs maintaining original user context
 - **Security Boundaries**: Each agent validates and processes tokens independently
@@ -157,7 +161,10 @@ af-poc/
 
 ## Implementation Phases
 
+![Overview Screenshot](imgs/overview.png)
+
 ### Phase 1: Basic Setup ✅ COMPLETE
+
 - [x] Research Microsoft Agent Framework
 - [x] Research JWT OBO patterns
 - [x] Create project structure (orchestrator + 2 sub-agents)
@@ -174,6 +181,7 @@ af-poc/
 - [x] **Configure conversation session management**
 
 ### Phase 2: Testing the OBO Flow (Current Phase)
+
 - [ ] Configure Azure AD application registrations (3 apps)
 - [ ] Test orchestrator → Python agent flow with OBO
 - [ ] Test orchestrator → .NET agent flow with OBO
@@ -182,6 +190,7 @@ af-poc/
 - [ ] Test with authentication (REQUIRE_AUTH=true)
 
 ### Phase 3: Agent Framework Integration
+
 - [ ] Add Azure OpenAI clients to orchestrator
 - [ ] Add Agent Framework to Python sub-agent
 - [ ] Add Agent Framework to .NET sub-agent
@@ -189,6 +198,7 @@ af-poc/
 - [ ] Test AI-powered responses through OBO flow
 
 ### Phase 4: Advanced Orchestration
+
 - [ ] Implement conversation state management
 - [ ] Add support for calling multiple sub-agents in one request
 - [ ] Implement agent-to-agent communication
@@ -196,6 +206,7 @@ af-poc/
 - [ ] Implement retry and fallback logic
 
 ### Phase 5: Production Hardening
+
 - [ ] Add comprehensive error handling
 - [ ] Implement request rate limiting
 - [ ] Add observability (OpenTelemetry, logging)
@@ -204,17 +215,19 @@ af-poc/
 - [ ] Add monitoring and alerting
 
 ### Phase 6: Frontend Integration ✅ COMPLETE
+
 - [x] Create Next.js frontend with assistant-ui
-- [x] Implement ExternalStoreRuntime for backend integration
-- [x] Add JWT token management utilities
-- [x] Build chat interface with streaming support
-- [x] Create API client with token injection
-- [ ] Connect to orchestrator service
-- [ ] Implement user authentication flow (Azure AD)
-- [ ] Display multi-agent conversation flow
-- [ ] Show which sub-agent handled each request
+- [x] Implement useLocalRuntime with ChatModelAdapter
+- [x] Build chat interface with Thread component
+- [x] Create Next.js API route proxy to orchestrator
+- [x] Simple JSON communication (no streaming complexity)
+- [x] Display agent metadata in responses
+- [ ] Add JWT authentication flow (Azure AD/MSAL.js)
+- [ ] Token injection in API route
+- [ ] Streaming support for real-time responses
 
 ### Phase 7: Payroll API Integration ✅ COMPLETE
+
 - [x] Create secure payroll API with JWT authentication
 - [x] Implement user-specific data endpoints
 - [x] Add authorization checks (oid claim validation)
@@ -224,18 +237,83 @@ af-poc/
 - [ ] Test full OBO flow: Frontend → Orchestrator → .NET Agent → Payroll API
 - [ ] Verify user identity preserved throughout chain
 
+## Frontend Architecture (assistant-ui)
+
+### Three-Layer Architecture
+
+The frontend uses **useLocalRuntime** with a custom **ChatModelAdapter** for clean separation:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Browser (React)                                             │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │  Assistant Component                                   │ │
+│  │  - useLocalRuntime(orchestratorAdapter)                │ │
+│  │  - Manages chat state client-side                      │ │
+│  └───────────────────┬───────────────────────────────────┘ │
+└──────────────────────┼──────────────────────────────────────┘
+                       │ POST /api/chat
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Next.js Server (API Route)                                  │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │  /app/api/chat/route.ts                                │ │
+│  │  - Extracts user message                               │ │
+│  │  - Proxies to orchestrator                             │ │
+│  │  - Returns {content, metadata}                         │ │
+│  └───────────────────┬───────────────────────────────────┘ │
+└──────────────────────┼──────────────────────────────────────┘
+                       │ POST /agent
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Orchestrator Service (Python FastAPI - Port 3001)          │
+│  - Selects agent (Python/.NET)                              │
+│  - Returns response with metadata                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+**1. ChatModelAdapter** (`frontend/app/assistant.tsx`)
+
+- Implements `ChatModelAdapter` interface from assistant-ui
+- Calls `/api/chat` endpoint (Next.js route, not orchestrator directly)
+- Returns `{content: [{type: "text", text: "..."}]}` format
+
+**2. useLocalRuntime** (assistant-ui hook)
+
+- Manages conversation state (messages, loading, errors)
+- Calls adapter's `run()` method when user sends message
+- No dependency on Vercel AI SDK or specific LLM providers
+
+**3. Next.js API Route** (`frontend/app/api/chat/route.ts`)
+
+- Server-side proxy to orchestrator
+- Simple JSON request/response (no streaming complexity)
+- Future: JWT token injection point
+
+**Benefits:**
+
+- **Security**: JWT tokens handled server-side only
+- **Simplicity**: No complex streaming protocols needed
+- **Flexibility**: Transform requests/responses without client changes
+- **Type Safety**: Full TypeScript support throughout
+
 ## Technology Stack
 
 ### Frontend
+
 - **Framework**: Next.js 15+ (React 19)
 - **UI Library**: [assistant-ui](https://github.com/assistant-ui/assistant-ui)
-- **Runtime**: ExternalStoreRuntime for custom backend integration
-- **Styling**: Tailwind CSS
+- **Runtime**: `useLocalRuntime` with custom `ChatModelAdapter`
+- **Styling**: Tailwind CSS + shadcn/ui
 - **Language**: TypeScript
-- **Features**: Streaming SSE support, JWT token management
+- **Architecture**: Three-layer (Browser → Next.js API Route → Orchestrator)
+- **Communication**: Simple JSON request/response (no streaming)
 - **Port**: 3000
 
 ### Orchestrator Service (Python)
+
 - **Package Manager**: UV
 - **Web Framework**: FastAPI + Uvicorn
 - **Authentication**: `msal` (MSAL Python), `python-jose[cryptography]`
@@ -244,6 +322,7 @@ af-poc/
 - **Port**: 3000 (same as frontend - will need port change)
 
 ### Python Sub-Agent
+
 - **Package Manager**: UV
 - **Web Framework**: FastAPI + Uvicorn
 - **Agent Framework**: `agent-framework` (Microsoft Agent Framework - unified)
@@ -256,6 +335,7 @@ af-poc/
 - **Port**: 8000
 
 ### .NET Sub-Agent
+
 - **Framework**: .NET 8+ / ASP.NET Core
 - **Agent Framework** (Phase 3): `Azure.AI.Agents` NuGet
 - **Authentication** (Phase 2): `Microsoft.Identity.Web`, `Microsoft.Identity.Client`
@@ -263,6 +343,7 @@ af-poc/
 - **Port**: 5000
 
 ### Payroll API (.NET)
+
 - **Framework**: .NET 8 (LTS) / ASP.NET Core Web API
 - **Authentication**: `Microsoft.Identity.Web` (3.2.1), `Microsoft.AspNetCore.Authentication.JwtBearer` (8.0.11)
 - **Features**: JWT validation, user-specific data access, audit logging
@@ -274,13 +355,16 @@ af-poc/
 The **On-Behalf-Of (OBO) flow** is the core of this POC. Here's how it works:
 
 ### Without OBO (Traditional API Call)
+
 ```
 User → Service A → Service B
        (loses user identity)
 ```
+
 Service B doesn't know who the original user is. Service B uses Service A's identity.
 
 ### With OBO Flow ✅
+
 ```
 User (JWT) → Orchestrator (validates JWT)
                 ↓ OBO Token Exchange
@@ -293,6 +377,7 @@ User (JWT) → Orchestrator (validates JWT)
 ```
 
 **Key Benefits**:
+
 1. **Identity Preservation**: Sub-agents know the original user's identity
 2. **RBAC Enforcement**: Sub-agents enforce permissions for the actual user
 3. **Audit Trail**: All actions are logged with the correct user identity
@@ -300,15 +385,15 @@ User (JWT) → Orchestrator (validates JWT)
 
 ### Implementation in This POC
 
-| Component | Port | Role | Token Handling |
-|-----------|------|------|----------------|
-| **Frontend** | 3000 | User authentication | Obtains user JWT from Azure AD |
-| **Orchestrator** | 3000* | Token exchange | Validates user JWT, acquires OBO tokens |
-| **Python Agent** | 8000 | Specialized work | Validates OBO token, executes as user |
-| **.NET Agent** | 5000 | Specialized work | Validates OBO token, executes as user |
-| **Payroll API** | 5100 | User data access | Validates OBO token, enforces user authorization |
+| Component        | Port   | Role                | Token Handling                                   |
+| ---------------- | ------ | ------------------- | ------------------------------------------------ |
+| **Frontend**     | 3000   | User authentication | Obtains user JWT from Azure AD                   |
+| **Orchestrator** | 3000\* | Token exchange      | Validates user JWT, acquires OBO tokens          |
+| **Python Agent** | 8000   | Specialized work    | Validates OBO token, executes as user            |
+| **.NET Agent**   | 5000   | Specialized work    | Validates OBO token, executes as user            |
+| **Payroll API**  | 5100   | User data access    | Validates OBO token, enforces user authorization |
 
-_*Note: Orchestrator and Frontend both use port 3000 - port conflict will be resolved in integration phase_
+_\*Note: Orchestrator and Frontend both use port 3000 - port conflict will be resolved in integration phase_
 
 ## Security Considerations
 
@@ -325,6 +410,7 @@ _*Note: Orchestrator and Frontend both use port 3000 - port conflict will be res
 ### Running All Services
 
 **Terminal 1: Frontend** (Next.js with assistant-ui)
+
 ```bash
 cd frontend
 npm install  # First time only
@@ -332,6 +418,7 @@ npm run dev  # Runs on port 3000
 ```
 
 **Terminal 2: Python Sub-Agent** (uses Claude CLI by default)
+
 ```bash
 cd python-agent
 source .venv/bin/activate  # Already initialized with uv
@@ -342,18 +429,21 @@ uvicorn src.main:app --reload --port 8000
 ```
 
 **Terminal 3: .NET Sub-Agent**
+
 ```bash
 cd dotnet-agent
 dotnet run --project AgentService  # Runs on port 5000
 ```
 
 **Terminal 4: Payroll API**
+
 ```bash
 cd dotnet-payroll-api
 dotnet run  # Runs on port 5100 (HTTP) and 5101 (HTTPS)
 ```
 
 **Terminal 5: Orchestrator**
+
 ```bash
 cd orchestrator
 source .venv/bin/activate  # Already initialized with uv
@@ -363,12 +453,14 @@ uvicorn src.main:app --reload --port 3001  # Changed to avoid port conflict with
 ### Testing the Flow
 
 **Frontend Testing:**
+
 ```bash
 # Open browser to http://localhost:3000
 # Use the chat interface to interact with the backend
 ```
 
 **Orchestrator Testing:**
+
 ```bash
 # Check all services are healthy
 curl http://localhost:3001/health/agents
@@ -390,6 +482,7 @@ curl -X POST http://localhost:3001/agent \
 ```
 
 **Payroll API Testing (without auth):**
+
 ```bash
 # Get user info (returns Alice Johnson's data in testing mode)
 curl http://localhost:5100/payroll/user-info
@@ -404,6 +497,7 @@ curl http://localhost:5100/health
 ## Getting Started
 
 See detailed implementation guides:
+
 - [**Frontend**](./frontend/README.md) 🎨 **Chat interface with assistant-ui**
 - [**Orchestrator Service**](./orchestrator/README.md) ⭐ **Start here for OBO flow**
 - [Python Sub-Agent](./python-agent/README.md)
@@ -413,20 +507,24 @@ See detailed implementation guides:
 ## References
 
 ### Agent Framework & Orchestration
+
 - [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
 - [Microsoft Agent Framework User Guide](https://learn.microsoft.com/en-us/agent-framework/user-guide/overview)
 
 ### Authentication & Security
+
 - [OAuth 2.0 On-Behalf-Of Flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow)
 - [MSAL.NET OBO Documentation](https://learn.microsoft.com/en-us/entra/msal/dotnet/acquiring-tokens/web-apps-apis/on-behalf-of-flow)
 - [Microsoft.Identity.Web Documentation](https://learn.microsoft.com/en-us/entra/msal/dotnet/microsoft-identity-web/)
 
 ### Frontend & UI
+
 - [assistant-ui](https://github.com/assistant-ui/assistant-ui)
 - [assistant-ui Documentation](https://www.assistant-ui.com/docs)
 - [ExternalStoreRuntime](https://www.assistant-ui.com/docs/runtimes/custom/external-store)
 
 ### Tools & Package Managers
+
 - [UV Package Manager](https://github.com/astral-sh/uv)
 - [Next.js Documentation](https://nextjs.org/docs)
 

@@ -112,9 +112,9 @@ test-dotnet-payroll: ## Run .NET payroll API tests (when available)
 
 ##@ Run Individual Services
 
-run-orchestrator: ## Run orchestrator service (port 3000)
-	@echo "$(CYAN)Starting orchestrator on port 3000...$(NC)"
-	@cd orchestrator && uv run --prerelease=allow uvicorn src.main:app --reload --port 3000
+run-orchestrator: ## Run orchestrator service (port 8001)
+	@echo "$(CYAN)Starting orchestrator on port 8001...$(NC)"
+	@cd orchestrator && uv run --prerelease=allow uvicorn src.main:app --reload --port 8001
 
 run-python-agent: ## Run Python agent service (port 8000)
 	@echo "$(CYAN)Starting Python agent on port 8000...$(NC)"
@@ -141,7 +141,7 @@ run-all: ## Run all services concurrently (requires tmux or separate terminals)
 	@echo "Terminal 1: $(CYAN)make run-python-agent$(NC)    (port 8000)"
 	@echo "Terminal 2: $(CYAN)make run-dotnet-agent$(NC)    (port 5000)"
 	@echo "Terminal 3: $(CYAN)make run-dotnet-payroll$(NC)  (port 5100)"
-	@echo "Terminal 4: $(CYAN)make run-orchestrator$(NC)    (port 3000)"
+	@echo "Terminal 4: $(CYAN)make run-orchestrator$(NC)    (port 8001)"
 	@echo "Terminal 5: $(CYAN)make run-frontend$(NC)        (port 3001)"
 
 dev: check-tmux ## Start all services in tmux session (recommended)
@@ -149,7 +149,7 @@ dev: check-tmux ## Start all services in tmux session (recommended)
 	@tmux new-session -d -s af-poc -n python-agent "cd python-agent && uv run --prerelease=allow uvicorn src.main:app --reload --port 8000"
 	@tmux new-window -t af-poc -n dotnet-agent "cd dotnet-agent && dotnet run --project AgentService"
 	@tmux new-window -t af-poc -n dotnet-payroll "cd dotnet-payroll-api && dotnet run --project PayrollApi"
-	@tmux new-window -t af-poc -n orchestrator "cd orchestrator && uv run --prerelease=allow uvicorn src.main:app --reload --port 3000"
+	@tmux new-window -t af-poc -n orchestrator "cd orchestrator && uv run --prerelease=allow uvicorn src.main:app --reload --port 8001"
 	@tmux new-window -t af-poc -n frontend "cd frontend && npm run dev -- --port 3001"
 	@echo "$(GREEN)✓ All services started in tmux session 'af-poc'$(NC)"
 	@echo ""
@@ -181,8 +181,8 @@ health: ## Check health of all services
 	@echo "$(CYAN).NET Payroll API (port 5100):$(NC)"
 	@curl -s http://localhost:5100/health 2>/dev/null | python3 -m json.tool || echo "$(RED)✗ Not responding$(NC)"
 	@echo ""
-	@echo "$(CYAN)Orchestrator (port 3000):$(NC)"
-	@curl -s http://localhost:3000/health/agents 2>/dev/null | python3 -m json.tool || echo "$(RED)✗ Not responding$(NC)"
+	@echo "$(CYAN)Orchestrator (port 8001):$(NC)"
+	@curl -s http://localhost:8001/health/agents 2>/dev/null | python3 -m json.tool || echo "$(RED)✗ Not responding$(NC)"
 	@echo ""
 	@echo "$(CYAN)Frontend (port 3001):$(NC)"
 	@curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 2>/dev/null | grep -q "200" && echo "$(GREEN)✓ Responding$(NC)" || echo "$(RED)✗ Not responding$(NC)"
@@ -233,17 +233,17 @@ test-flow: ## Test the complete orchestration flow
 	@echo "$(CYAN)Testing orchestration flow...$(NC)"
 	@echo ""
 	@echo "$(CYAN)Test 1: Python agent selection$(NC)"
-	@curl -s -X POST http://localhost:3000/agent \
+	@curl -s -X POST http://localhost:8001/agent \
 		-H "Content-Type: application/json" \
 		-d '{"message": "Help me with pandas dataframes"}' | python3 -m json.tool
 	@echo ""
 	@echo "$(CYAN)Test 2: .NET agent selection$(NC)"
-	@curl -s -X POST http://localhost:3000/agent \
+	@curl -s -X POST http://localhost:8001/agent \
 		-H "Content-Type: application/json" \
 		-d '{"message": "Help me with ASP.NET Core"}' | python3 -m json.tool
 	@echo ""
 	@echo "$(CYAN)Test 3: Explicit Python agent$(NC)"
-	@curl -s -X POST http://localhost:3000/agent \
+	@curl -s -X POST http://localhost:8001/agent \
 		-H "Content-Type: application/json" \
 		-d '{"message": "Hello", "preferred_agent": "python"}' | python3 -m json.tool
 
@@ -279,13 +279,13 @@ ports: ## Show port allocations
 	@echo "  $(GREEN)Python Agent:$(NC)      http://localhost:8000"
 	@echo "  $(GREEN).NET Agent:$(NC)        http://localhost:5000"
 	@echo "  $(GREEN).NET Payroll API:$(NC)  http://localhost:5100"
-	@echo "  $(GREEN)Orchestrator:$(NC)      http://localhost:3000"
+	@echo "  $(GREEN)Orchestrator:$(NC)      http://localhost:8001"
 	@echo "  $(GREEN)Frontend:$(NC)          http://localhost:3001"
 
 endpoints: ## Show available API endpoints
 	@echo "$(CYAN)Available Endpoints:$(NC)"
 	@echo ""
-	@echo "$(GREEN)Orchestrator (port 3000):$(NC)"
+	@echo "$(GREEN)Orchestrator (port 8001):$(NC)"
 	@echo "  POST /agent            - Main orchestration endpoint"
 	@echo "  GET  /health/agents    - Health check for all agents"
 	@echo ""

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     DOTNET_AGENT_SCOPES: List[str] = ["api://dotnet-agent/.default"]
 
     # API Configuration
-    API_PORT: int = 3000
+    API_PORT: int = 8001  # Orchestrator port
     API_HOST: str = "0.0.0.0"
 
     # Enable/Disable Authentication (for testing)

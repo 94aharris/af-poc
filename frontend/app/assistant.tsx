@@ -1,10 +1,6 @@
 "use client";
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import {
-  useChatRuntime,
-  AssistantChatTransport,
-} from "@assistant-ui/react-ai-sdk";
+import { AssistantRuntimeProvider, useLocalRuntime, type ChatModelAdapter } from "@assistant-ui/react";
 import { Thread } from "@/components/assistant-ui/thread";
 import {
   SidebarInset,
@@ -22,12 +18,48 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
+// Custom adapter for orchestrator backend
+const orchestratorAdapter: ChatModelAdapter = {
+  async run({ messages, abortSignal }) {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+      signal: abortSignal,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: data.content || data.error || "An error occurred",
+          },
+        ],
+      };
+    }
+
+    // Build the response text with metadata
+    const responseText = data.content;
+    const metadataText = data.metadata
+      ? `\n\n---\n**Agent:** ${data.metadata.agent}\n**Status:** ${data.metadata.status}`
+      : "";
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: responseText + metadataText,
+        },
+      ],
+    };
+  },
+};
+
 export const Assistant = () => {
-  const runtime = useChatRuntime({
-    transport: new AssistantChatTransport({
-      api: "/api/chat",
-    }),
-  });
+  const runtime = useLocalRuntime(orchestratorAdapter);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -51,7 +83,7 @@ export const Assistant = () => {
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
                   <BreadcrumbItem>
-                    <BreadcrumbPage>Starter Template</BreadcrumbPage>
+                    <BreadcrumbPage>Orchestrator Agent</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
