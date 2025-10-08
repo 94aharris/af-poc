@@ -20,7 +20,9 @@ obj/
 
 # Sensitive files
 .env
+.old.env
 .env.local
+.env.local.old
 *.pem
 *.key
 *.pfx
