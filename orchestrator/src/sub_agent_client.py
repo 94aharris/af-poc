@@ -63,18 +63,23 @@ class SubAgentClient:
         # Prepare headers
         headers = {"Content-Type": "application/json"}
 
+        # Extract request ID from metadata for tracing
+        request_id = metadata.get("request_id", "unknown") if metadata else "unknown"
+
         if obo_token and settings.REQUIRE_AUTH:
             # Pass OBO token to sub-agent
             headers["Authorization"] = f"Bearer {obo_token}"
-            logger.info(f"Calling {agent_type.value} agent with OBO token")
+            logger.info(f"[{request_id}] [ORCHESTRATOR→{agent_type.value.upper()}] Calling with OBO token")
         else:
-            logger.info(f"Calling {agent_type.value} agent without auth (testing mode)")
+            logger.info(f"[{request_id}] [ORCHESTRATOR→{agent_type.value.upper()}] Calling without auth (testing mode)")
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(endpoint, json=payload, headers=headers)
                 response.raise_for_status()
                 data = response.json()
+
+                logger.info(f"[{request_id}] [{agent_type.value.upper()}→ORCHESTRATOR] Response received successfully")
 
                 return SubAgentResponse(
                     agent_type=agent_type.value,

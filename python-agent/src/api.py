@@ -21,12 +21,21 @@ async def agent_endpoint(request: AgentRequest):
     Returns:
         AgentResponse with the agent's reply
     """
+    # Extract request ID for tracing
+    request_id = request.metadata.get("request_id", "unknown") if request.metadata else "unknown"
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[{request_id}] [PYTHON-AGENT] Processing message: {request.message[:100]}")
+
     try:
         # Run the agent with the user's message
         response_message = await agent_service.run_agent(
             message=request.message,
             conversation_id=request.conversation_id,
         )
+
+        logger.info(f"[{request_id}] [PYTHON-AGENT] Response generated successfully")
 
         return AgentResponse(
             message=response_message,

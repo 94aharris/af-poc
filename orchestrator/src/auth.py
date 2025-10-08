@@ -5,9 +5,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 import msal
 import httpx
+import logging
 from typing import Optional, Dict
 from src.config import settings
 
+logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
 
 
@@ -56,9 +58,20 @@ class JWTValidator:
                 options={"verify_signature": True},
             )
 
+            logger.info(f"JWT validation successful for user: {claims.get('name', 'unknown')}")
             return claims
 
         except JWTError as e:
+            logger.error(f"JWT validation failed: {str(e)}")
+            logger.error(f"Expected audience: {settings.JWT_AUDIENCE}")
+            logger.error(f"Expected issuer: {settings.JWT_ISSUER}")
+            # Decode without verification to see what's in the token
+            try:
+                unverified_claims = jwt.get_unverified_claims(token)
+                logger.error(f"Token audience claim: {unverified_claims.get('aud')}")
+                logger.error(f"Token issuer claim: {unverified_claims.get('iss')}")
+            except:
+                pass
             raise HTTPException(
                 status_code=401, detail=f"Invalid authentication credentials: {str(e)}"
             )
@@ -133,7 +146,8 @@ async def get_current_user(
 ) -> Optional[Dict]:
     """FastAPI dependency to validate JWT and extract user claims.
 
-    If REQUIRE_AUTH is False, returns None (for testing without Azure AD).
+    If REQUIRE_AUTH is False, returns mock user for testing without Azure AD.
+    Extracts roles from JWT claims for authorization.
     """
     if not settings.REQUIRE_AUTH:
         # Return mock user for testing without auth
@@ -141,13 +155,23 @@ async def get_current_user(
             "oid": "test-user-id",
             "name": "Test User",
             "preferred_username": "test@example.com",
+            "email": "test@example.com",
+            "roles": ["admin"],  # Mock admin role for testing
         }
 
     if not credentials:
+        logger.warning("No authorization credentials provided")
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     token = credentials.credentials
+    logger.info("Validating JWT token...")
     claims = await jwt_validator.validate_token(token)
+
+    # Extract roles from claims
+    # Azure AD roles can be in 'roles' claim or 'groups' claim
+    claims["roles"] = claims.get("roles", [])
+    claims["groups"] = claims.get("groups", [])
+
     return claims
 
 
