@@ -15,10 +15,21 @@ npm install
 Create or update `.env.local`:
 
 ```bash
-ORCHESTRATOR_URL=http://localhost:3001
+# Azure AD Configuration
+AUTH_AZURE_AD_TENANT_ID=your-tenant-id
+AUTH_AZURE_AD_ID=your-frontend-client-id
+AUTH_AZURE_AD_SECRET=your-frontend-client-secret
+ORCHESTRATOR_CLIENT_ID=your-orchestrator-client-id
+
+# NextAuth Configuration
+NEXTAUTH_URL=http://localhost:3000
+AUTH_SECRET=generate-with-openssl-rand-base64-32
+
+# Orchestrator URL
+ORCHESTRATOR_URL=http://localhost:8001
 ```
 
-This points to the orchestrator service (default port 3001).
+Get Azure AD credentials from the root `.env` file or Azure Portal.
 
 ### 3. Run Development Server
 
@@ -220,28 +231,202 @@ Content-Type: application/json
 7. **Adapter** returns to useLocalRuntime as `{content: [{type: "text", text: "..."}]}`
 8. **assistant-ui** renders the message in the UI
 
-## 🔐 Authentication (Future)
+## 🔐 Authentication with Auth.js (NextAuth v5)
 
-JWT authentication will be added in Phase 2. The architecture will support:
+The frontend uses **Auth.js** (NextAuth.js v5) for Azure AD authentication. This provides a seamless OAuth flow with automatic token management and session handling.
 
-1. **Token acquisition** in browser via Azure AD/MSAL.js
-2. **Token storage** in HTTP-only cookies (secure)
-3. **Token injection** in `/api/chat` route before forwarding to orchestrator
-4. **OBO flow** in orchestrator to call sub-agents
+### Authentication Architecture
 
-**Future implementation:**
-```typescript
-// In app/api/chat/route.ts
-const token = cookies().get('auth_token')?.value;
-
-const response = await fetch(`${orchestratorUrl}/agent`, {
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ message: userMessage })
-});
 ```
+┌──────────────────────────────────────────────────────────────────┐
+│  1. User clicks "Sign In" button                                 │
+│     ↓                                                             │
+│  2. Auth.js redirects to Azure AD login                          │
+│     ↓                                                             │
+│  3. User authenticates with Microsoft credentials                │
+│     ↓                                                             │
+│  4. Azure AD redirects back with authorization code              │
+│     ↓                                                             │
+│  5. Auth.js exchanges code for access token                      │
+│     ↓                                                             │
+│  6. Token stored in encrypted session cookie                     │
+│     ↓                                                             │
+│  7. Frontend adapter extracts token and sends to orchestrator    │
+│     ↓                                                             │
+│  8. Orchestrator validates token & performs OBO exchange         │
+│     ↓                                                             │
+│  9. Sub-agents receive OBO token with user context               │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+#### 1. Auth Configuration (`auth.ts`)
+
+```typescript
+import NextAuth from "next-auth"
+import AzureADProvider from "next-auth/providers/azure-ad"
+
+export const { handlers, signIn, signOut, auth } = NextAuth({
+  providers: [
+    AzureADProvider({
+      tenantId: process.env.AUTH_AZURE_AD_TENANT_ID,
+      issuer: `https://login.microsoftonline.com/${process.env.AUTH_AZURE_AD_TENANT_ID}/v2.0`,
+      authorization: {
+        params: {
+          scope: "openid profile email offline_access",
+        },
+      },
+    }),
+  ],
+  callbacks: {
+    async jwt({ token, account }) {
+      // Store access token in JWT
+      if (account) {
+        token.accessToken = account.access_token
+      }
+      return token
+    },
+    async session({ session, token }) {
+      // Make access token available to client
+      session.accessToken = token.accessToken
+      return session
+    },
+  },
+})
+```
+
+#### 2. Auth Provider (`lib/auth-provider.tsx`)
+
+```typescript
+import { SessionProvider } from "next-auth/react"
+
+export function AuthProvider({ children }) {
+  return <SessionProvider>{children}</SessionProvider>
+}
+```
+
+#### 3. useAuth Hook (`hooks/useAuth.ts`)
+
+Custom hook that wraps NextAuth's `useSession`:
+
+```typescript
+import { useSession, signIn, signOut } from "next-auth/react"
+
+export function useAuth() {
+  const { data: session, status } = useSession()
+
+  return {
+    isAuthenticated: status === "authenticated",
+    user: session?.user,
+    login: () => signIn("azure-ad"),
+    logout: () => signOut(),
+    getToken: async () => session?.accessToken || null,
+    status,
+  }
+}
+```
+
+#### 4. Token Forwarding in ChatModelAdapter
+
+The adapter extracts the token and forwards it to the orchestrator:
+
+```typescript
+const orchestratorAdapter: ChatModelAdapter = {
+  async run({ messages, abortSignal }) {
+    const headers: HeadersInit = { "Content-Type": "application/json" }
+
+    // Add Bearer token if authenticated
+    if (isAuthenticated) {
+      const token = await getToken()
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`
+      }
+    }
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ messages }),
+      signal: abortSignal,
+    })
+    // ...
+  }
+}
+```
+
+### Why Auth.js Instead of MSAL?
+
+We switched from **@azure/msal-react** to **Auth.js** for several reasons:
+
+| Feature | MSAL React | Auth.js |
+|---------|------------|---------|
+| **Setup Complexity** | High - manual initialization, redirect handling, token refresh | Low - convention-based configuration |
+| **Next.js Integration** | Manual - requires careful handling of SSR/CSR | Native - built for Next.js App Router |
+| **Session Management** | Manual - state in React context | Automatic - encrypted server-side sessions |
+| **Token Refresh** | Manual - acquireTokenSilent logic | Automatic - built-in refresh flow |
+| **Redirect Handling** | Bug-prone - double-click issues with Strict Mode | Robust - PKCE flow with proper state management |
+| **TypeScript Support** | Good | Excellent |
+| **Bundle Size** | ~100KB | ~50KB |
+
+### Authentication Flow Details
+
+1. **Initial Load**: Auth.js checks for existing session cookie
+2. **Sign In Click**: Redirects to Azure AD with PKCE challenge
+3. **Azure AD Login**: User authenticates with Microsoft
+4. **Callback**: Auth.js receives auth code at `/api/auth/callback/azure-ad`
+5. **Token Exchange**: Auth.js exchanges code for access token
+6. **Session Creation**: Token encrypted and stored in HTTP-only cookie
+7. **Client Access**: `useSession()` hook provides session data to React components
+
+### Token Lifecycle
+
+- **Access Token**: Stored in encrypted session cookie (HTTP-only, secure)
+- **Refresh Token**: Automatically handled by Auth.js
+- **Token Expiry**: Auth.js refreshes tokens before expiry
+- **Logout**: Clears session cookie and redirects to Azure AD logout
+
+### Security Benefits
+
+1. **No Client-Side Token Storage**: Tokens never exposed to JavaScript
+2. **HTTP-Only Cookies**: Prevents XSS attacks
+3. **PKCE Flow**: Protects against authorization code interception
+4. **Encrypted Sessions**: Session data encrypted with `AUTH_SECRET`
+5. **CSRF Protection**: Built-in CSRF tokens for all auth operations
+
+### Azure AD Configuration Required
+
+In your Azure AD app registration for the frontend app:
+
+1. **Redirect URIs**: Add `http://localhost:3000/api/auth/callback/azure-ad`
+2. **Logout URLs**: Add `http://localhost:3000` (optional)
+3. **API Permissions**:
+   - `openid`, `profile`, `email`, `offline_access` (Microsoft Graph)
+   - `api://{orchestrator-client-id}/access_as_user` (custom scope)
+4. **Grant Admin Consent**: Required for organizational accounts
+
+### Debugging Authentication
+
+Enable debug mode in `auth.ts`:
+
+```typescript
+export const { handlers, signIn, signOut, auth } = NextAuth({
+  debug: true, // Logs all auth events to terminal
+  // ...
+})
+```
+
+Check terminal output for:
+- `[auth][debug]: authorization url is ready` - OAuth flow started
+- `JWT callback triggered` - Token received from Azure AD
+- `Session callback` - Session created successfully
+
+### Common Issues
+
+1. **OAuthCallbackError**: Check redirect URI matches Azure AD exactly
+2. **Invalid audience**: Verify `AUTH_AZURE_AD_TENANT_ID` is correct
+3. **Scope rejection**: Ensure admin consent granted for custom API scopes
+4. **Session not persisting**: Check `AUTH_SECRET` is set and consistent
 
 ## 📚 Documentation
 
@@ -249,6 +434,8 @@ const response = await fetch(`${orchestratorUrl}/agent`, {
 - **useLocalRuntime**: https://www.assistant-ui.com/docs/runtimes/custom/local
 - **ChatModelAdapter**: Custom backend integration pattern
 - **Next.js API Routes**: https://nextjs.org/docs/app/building-your-application/routing/route-handlers
+- **Auth.js (NextAuth v5)**: https://authjs.dev/getting-started/installation
+- **Azure AD Provider**: https://authjs.dev/getting-started/providers/azure-ad
 
 ## 🛠️ Development
 
@@ -271,7 +458,7 @@ All assistant-ui components are in `components/assistant-ui/` and can be customi
 
 **Styling**: Uses Tailwind CSS with shadcn/ui components. Customize in `tailwind.config.ts`.
 
-## 🚧 Current Status: Integrated with Orchestrator
+## 🚧 Current Status: Integrated with Orchestrator + Authentication
 
 ✅ **Completed:**
 - ✅ Next.js project with assistant-ui
@@ -280,10 +467,12 @@ All assistant-ui components are in `components/assistant-ui/` and can be customi
 - ✅ Simple JSON request/response handling
 - ✅ Agent metadata display in messages
 - ✅ Thread UI with markdown rendering
+- ✅ Auth.js (NextAuth v5) with Azure AD integration
+- ✅ JWT token forwarding to orchestrator
+- ✅ Secure session management with HTTP-only cookies
+- ✅ Automatic token refresh
 
 🔜 **Next Steps:**
-- [ ] Add JWT authentication with Azure AD
-- [ ] Token injection in API route
 - [ ] Error handling and retry logic
 - [ ] Streaming support for real-time responses
 - [ ] Loading states and optimistic updates

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { AssistantRuntimeProvider, useLocalRuntime, type ChatModelAdapter } from "@assistant-ui/react";
 import { Thread } from "@/components/assistant-ui/thread";
 import {
@@ -17,49 +18,97 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 
-// Custom adapter for orchestrator backend
-const orchestratorAdapter: ChatModelAdapter = {
-  async run({ messages, abortSignal }) {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages }),
-      signal: abortSignal,
-    });
+export const Assistant = () => {
+  const { isAuthenticated, user, login, logout, getToken, status } = useAuth();
 
-    const data = await response.json();
+  // Check for auth errors in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('error');
+    if (error) {
+      console.error('Auth error from URL:', error);
+    }
+  }, []);
 
-    if (!response.ok) {
+  // Custom adapter for orchestrator backend with auth
+  const orchestratorAdapter: ChatModelAdapter = {
+    async run({ messages, abortSignal }) {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+
+      // Add Bearer token if authenticated
+      if (isAuthenticated) {
+        const token = await getToken();
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+      }
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ messages }),
+        signal: abortSignal,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: data.content || data.error || "An error occurred",
+            },
+          ],
+        };
+      }
+
+      // Build the response text with metadata
+      const responseText = data.content;
+      const metadataText = data.metadata
+        ? `\n\n---\n**Agent:** ${data.metadata.agent}\n**Status:** ${data.metadata.status}`
+        : "";
+
       return {
         content: [
           {
             type: "text" as const,
-            text: data.content || data.error || "An error occurred",
+            text: responseText + metadataText,
           },
         ],
       };
-    }
+    },
+  };
 
-    // Build the response text with metadata
-    const responseText = data.content;
-    const metadataText = data.metadata
-      ? `\n\n---\n**Agent:** ${data.metadata.agent}\n**Status:** ${data.metadata.status}`
-      : "";
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: responseText + metadataText,
-        },
-      ],
-    };
-  },
-};
-
-export const Assistant = () => {
   const runtime = useLocalRuntime(orchestratorAdapter);
+
+  // Show loading screen while checking authentication
+  if (status === "loading") {
+    return (
+      <div className="flex h-dvh w-full items-center justify-center">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold">Loading...</h1>
+          <p className="text-muted-foreground">Checking authentication status</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="flex h-dvh w-full items-center justify-center">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold">Authentication Required</h1>
+          <p className="text-muted-foreground">Please sign in to use the assistant</p>
+          <Button onClick={login}>Sign In with Microsoft</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -87,6 +136,14 @@ export const Assistant = () => {
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {user?.name || user?.email}
+                </span>
+                <Button variant="outline" size="sm" onClick={logout}>
+                  Sign Out
+                </Button>
+              </div>
             </header>
             <div className="flex-1 overflow-hidden">
               <Thread />
