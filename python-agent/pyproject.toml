@@ -9,8 +9,9 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.1.0",
-    "agent-framework",
+    "agent-framework[viz]",
     "azure-identity>=1.15.0",
+    "agent-framework-devui>=1.0.0b251007",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,9 @@ dev = [
     "black>=24.0.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
+]
+viz = [
+    "agent-framework>=1.0.0b251007",
 ]
 
 [build-system]

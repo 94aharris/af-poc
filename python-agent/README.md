@@ -573,6 +573,58 @@ uv run pytest tests/test_api.py -v
 uv build
 ```
 
+## Workflow Visualizer
+
+The Microsoft Agent Framework includes a built-in development UI (`devui`) that provides a visual workflow debugger for your agents. This allows you to:
+
+- Visualize agent execution flows in real-time
+- Debug agent interactions and responses
+- Test agents interactively in a web interface
+- Inspect agent state and configuration
+
+### Running the Workflow Visualizer
+
+The visualizer will **autodiscover** agents and workflows in your project:
+
+```bash
+# From the python-agent root directory
+uv run devui src/ --port 8181
+```
+
+This will:
+1. Scan the `src/` directory for agents and workflows
+2. Start the devui server on port 8181
+3. Open the visualizer in your default web browser
+
+### Example Agent
+
+See `src/agent_example.py` for a sample agent that can be discovered by devui:
+
+```python
+from agent_framework.azure import AzureOpenAIResponsesClient
+from azure.identity import AzureCliCredential
+from config import settings
+
+agent = AzureOpenAIResponsesClient(
+    endpoint=settings.azure_openai_endpoint,
+    deployment_name=settings.azure_openai_deployment,
+    api_version="2025-03-01-preview",
+    credential=AzureCliCredential(),
+).create_agent(
+    name="HaikuBot",
+    instructions="You are an upbeat assistant that writes beautifully.",
+)
+```
+
+**Alternative**: You can also run the example directly by uncommenting the `serve()` line in `agent_example.py`:
+
+```bash
+# Uncomment: serve(entities=[agent], auto_open=True)
+uv run python src/agent_example.py
+```
+
+**Note**: Make sure you're authenticated with Azure CLI (`az login`) before running the visualizer.
+
 ## API Endpoints
 
 ### `GET /health`

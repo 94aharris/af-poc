@@ -20,3 +20,22 @@ class AgentResponse(BaseModel):
     agent_type: str
     conversation_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class WorkflowRequest(BaseModel):
+    """Request model for workflow endpoints."""
+
+    input: str = Field(..., description="Input data for the workflow")
+    workflow_params: Optional[Dict[str, Any]] = Field(
+        default_factory=dict, description="Additional workflow parameters"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class WorkflowResponse(BaseModel):
+    """Response model from workflow endpoints."""
+
+    result: str = Field(..., description="Workflow execution result")
+    status: str
+    workflow_type: str
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
