@@ -20,10 +20,12 @@ class Settings(BaseSettings):
     # Sub-Agent Endpoints
     PYTHON_AGENT_URL: str = "http://localhost:8000"
     DOTNET_AGENT_URL: str = "http://localhost:5000"
+    PAYROLL_API_URL: str = "http://localhost:5100"
 
     # OBO Scopes for sub-agents
     PYTHON_AGENT_SCOPES: List[str] = ["api://python-agent/.default"]
     DOTNET_AGENT_SCOPES: List[str] = ["api://dotnet-agent/.default"]
+    PAYROLL_API_SCOPES: List[str] = ["api://payroll-api/.default"]
 
     # API Configuration
     API_PORT: int = 8001  # Orchestrator port
@@ -31,6 +33,25 @@ class Settings(BaseSettings):
 
     # Enable/Disable Authentication (for testing)
     REQUIRE_AUTH: bool = False
+
+    # Enable Claude Code intelligent routing for orchestrator
+    # Requires Claude CLI to be installed: https://claude.com/claude-code
+    ENABLE_INTELLIGENT_ROUTING: bool = False
+
+    # Azure OpenAI Configuration (for Microsoft Agent Framework)
+    AZURE_OPENAI_ENDPOINT: str = ""
+    AZURE_OPENAI_DEPLOYMENT: str = ""
+    AZURE_OPENAI_API_KEY: str = ""
+
+    # Agent Configuration
+    agent_name: str = "OrchestratorAgent"
+    agent_instructions: str = (
+        "You are an intelligent orchestrator agent that helps users with payroll information and calculations. "
+        "Use the get_user_info tool to retrieve user information from the payroll system. "
+        "Use the get_user_pto tool to get PTO (Paid Time Off) balance and history. "
+        "Use the calculate tool for mathematical calculations and data analysis. "
+        "Always provide clear and helpful responses."
+    )
 
     class Config:
         env_file = ".env"

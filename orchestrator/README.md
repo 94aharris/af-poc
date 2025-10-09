@@ -2,17 +2,24 @@
 
 ## Overview
 
-The **Orchestrator Service** is the central component of this POC, demonstrating the **JWT On-Behalf-Of (OBO) authentication flow** for multi-agent orchestration. This service receives user requests, selects the appropriate sub-agent, exchanges JWT tokens using OBO flow, and delegates work while maintaining user identity and authorization context.
+The **Orchestrator Service** is the central component of this POC, demonstrating:
+1. **Microsoft Agent Framework Integration** - AI-powered orchestration with intelligent tool use
+2. **JWT On-Behalf-Of (OBO) Authentication Flow** - Secure token exchange for multi-service access
+3. **Payroll API Integration** - Secure access to user payroll data with OBO tokens
+4. **Sub-Agent Delegation** - Routes specialized tasks to domain-specific agents
+
+This service receives user requests, uses an AI agent to determine what tools/services are needed, exchanges JWT tokens using OBO flow for secure API access, and orchestrates responses while maintaining user identity and authorization context.
 
 ## 🎯 Core POC Functionality
 
 This orchestrator demonstrates:
 
-1. **JWT Token Validation**: Validates incoming user JWT tokens from the frontend
-2. **Intelligent Agent Selection**: Analyzes user intent to select the best sub-agent (Python or .NET)
-3. **OBO Token Exchange**: **THE CORE POC** - Exchanges user JWT for scoped OBO tokens for sub-agents
-4. **Delegated Execution**: Calls sub-agents with OBO tokens, maintaining user context
-5. **Response Aggregation**: Collects and returns sub-agent responses to the frontend
+1. **Microsoft Agent Framework**: AI agent with specialized tools for intelligent task execution
+2. **JWT Token Validation**: Validates incoming user JWT tokens from the frontend
+3. **OBO Token Exchange**: **THE CORE POC** - Exchanges user JWT for scoped OBO tokens for downstream services
+4. **Payroll API Tools**: Secure access to user information and PTO data via OBO authentication
+5. **Calculator Tool**: Delegates mathematics questions to specialized Python agent
+6. **Legacy Agent Selection**: Keyword-based routing to Python or .NET sub-agents (legacy endpoint)
 
 ## Architecture
 
@@ -70,33 +77,40 @@ This orchestrator demonstrates:
 - **Python**: 3.11+
 - **Package Manager**: UV
 - **Web Framework**: FastAPI + Uvicorn
+- **AI/Agent Framework**:
+  - `agent-framework` - Microsoft Agent Framework for intelligent tool use
+  - **Azure OpenAI** - LLM for agent reasoning
 - **Authentication**:
   - `msal` - MSAL Python for OBO flow
   - `python-jose[cryptography]` - JWT validation
   - `azure-identity` - Azure credential management
-- **HTTP Client**: `httpx` - For calling sub-agents
+- **HTTP Client**: `httpx` - For calling downstream services and APIs
 - **Configuration**: `pydantic-settings`
 
 ## Project Structure
 
 ```
 orchestrator/
-├── README.md                    # This file
-├── pyproject.toml              # UV project configuration
-├── .python-version             # Python version
+├── README.md                       # This file
+├── pyproject.toml                 # UV project configuration
+├── .python-version                # Python version
 ├── src/
 │   ├── __init__.py
-│   ├── main.py                 # FastAPI application entry
-│   ├── api.py                  # Main /agent endpoint ⭐
-│   ├── auth.py                 # JWT validation & OBO flow ⭐⭐
-│   ├── agent_selector.py       # Intent analysis & agent selection
-│   ├── sub_agent_client.py     # Sub-agent HTTP client
-│   ├── config.py               # Configuration management
-│   └── models.py               # Pydantic models
+│   ├── main.py                    # FastAPI application entry
+│   ├── api.py                     # API endpoints ⭐
+│   ├── agent_framework_impl.py    # Agent Framework integration ⭐⭐ NEW
+│   ├── auth.py                    # JWT validation & OBO flow ⭐⭐
+│   ├── agent_selector.py          # Intent analysis (legacy)
+│   ├── sub_agent_client.py        # Sub-agent HTTP client (legacy)
+│   ├── audit.py                   # Audit logging
+│   ├── authorization.py           # Authorization service
+│   ├── intelligent_routing.py     # Claude-based routing (optional)
+│   ├── config.py                  # Configuration management
+│   └── models.py                  # Pydantic models
 ├── tests/
 │   ├── test_api.py
 │   └── test_agent_selector.py
-└── .env.example                # Environment template
+└── .env.example                   # Environment template
 ```
 
 ## Getting Started
@@ -108,14 +122,24 @@ orchestrator/
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. **Start Sub-Agents** (in separate terminals):
+2. **Azure OpenAI Setup** (Required for Agent Framework):
+   - Create an Azure OpenAI resource in Azure Portal
+   - Deploy a model (e.g., gpt-4, gpt-4o)
+   - Get your endpoint, deployment name, and API key
+   - See [Azure OpenAI Documentation](https://learn.microsoft.com/en-us/azure/ai-services/openai/)
+
+3. **Start Required Services** (in separate terminals):
    ```bash
-   # Terminal 1: Python agent
+   # Terminal 1: Python agent (for calculator tool)
    cd ../python-agent
    uv sync
    uv run uvicorn src.main:app --reload --port 8000
 
-   # Terminal 2: .NET agent
+   # Terminal 2: Payroll API (for user info/PTO tools)
+   cd ../dotnet-payroll-api
+   dotnet run --project PayrollApi
+
+   # Terminal 3 (optional): .NET agent (for legacy endpoint)
    cd ../dotnet-agent
    dotnet run --project AgentService
    ```
@@ -129,10 +153,11 @@ The project has already been initialized with the following structure and depend
 - `uvicorn[standard]` (>=0.27.0) - ASGI server
 - `pydantic` (>=2.6.0) - Data validation
 - `pydantic-settings` (>=2.1.0) - Configuration management
-- `httpx` (>=0.27.0) - Async HTTP client for sub-agent calls
+- `httpx` (>=0.27.0) - Async HTTP client for API calls
 - `msal` (>=1.28.0) - MSAL Python for OBO flow ⭐
 - `python-jose[cryptography]` (>=3.3.0) - JWT validation
 - `azure-identity` (>=1.15.0) - Azure credential management
+- `agent-framework` - Microsoft Agent Framework ⭐⭐ NEW
 
 **Dev Dependencies:**
 - `pytest` (>=8.0.0) - Testing framework
@@ -160,11 +185,24 @@ uv run uvicorn src.main:app --reload --port 3000
 # Copy environment template
 cp .env.example .env
 
-# Edit .env
-# For TESTING without Azure AD, set:
-REQUIRE_AUTH=false
+# Edit .env with your settings
+```
 
-# For PRODUCTION with Azure AD, set:
+**Required Configuration (Azure OpenAI for Agent Framework)**:
+```bash
+# Azure OpenAI Configuration - REQUIRED for Agent Framework
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT=gpt-4
+AZURE_OPENAI_API_KEY=your-api-key
+```
+
+**For TESTING without Azure AD Authentication**:
+```bash
+REQUIRE_AUTH=false
+```
+
+**For PRODUCTION with Azure AD Authentication**:
+```bash
 REQUIRE_AUTH=true
 AZURE_TENANT_ID=your-tenant-id
 AZURE_CLIENT_ID=your-orchestrator-app-id
@@ -173,6 +211,14 @@ JWT_AUDIENCE=api://your-orchestrator-api-id
 JWT_ISSUER=https://login.microsoftonline.com/{tenant-id}/v2.0
 PYTHON_AGENT_SCOPES=["api://python-agent-id/.default"]
 DOTNET_AGENT_SCOPES=["api://dotnet-agent-id/.default"]
+PAYROLL_API_SCOPES=["api://payroll-api-id/.default"]
+```
+
+**Service Endpoints**:
+```bash
+PYTHON_AGENT_URL=http://localhost:8000
+DOTNET_AGENT_URL=http://localhost:5000
+PAYROLL_API_URL=http://localhost:5100
 ```
 
 ### Running the Orchestrator
@@ -203,16 +249,20 @@ uv run pytest tests/test_agent_selector.py -v
 
 ## API Endpoints
 
-### `POST /agent` ⭐ Main Orchestrator Endpoint
+### `POST /agent` ⭐ Microsoft Agent Framework Endpoint (NEW - Primary)
 
-The primary endpoint demonstrating the complete OBO flow.
+The primary endpoint using Microsoft Agent Framework with intelligent tool use and OBO authentication.
+
+This endpoint uses an AI agent that intelligently selects and uses tools based on user requests:
+- **get_user_info**: Retrieves user payroll information from Payroll API (with OBO)
+- **get_user_pto**: Retrieves PTO balance and history from Payroll API (with OBO)
+- **calculate**: Delegates mathematical calculations to Python agent (with OBO)
 
 **Request**:
 ```json
 {
-  "message": "Help me with Python data analysis",
+  "message": "What is my current PTO balance?",
   "conversation_id": "optional-uuid",
-  "preferred_agent": "auto",  // "auto", "python", or "dotnet"
   "metadata": {}
 }
 ```
@@ -220,47 +270,61 @@ The primary endpoint demonstrating the complete OBO flow.
 **Response**:
 ```json
 {
-  "message": "it's alive",
+  "message": "Based on the payroll system, you have 120 hours of PTO available. You've accrued 160 hours this year and used 40 hours. You also have 8 hours in pending requests.",
   "status": "success",
-  "selected_agent": "python",
+  "selected_agent": "agent-framework",
   "conversation_id": "optional-uuid",
-  "sub_agent_responses": [
-    {
-      "agent_type": "python",
-      "message": "it's alive",
-      "status": "healthy",
-      "metadata": {}
-    }
-  ],
   "metadata": {
     "user_id": "user-oid-from-jwt",
-    "user_name": "John Doe",
-    "auth_enabled": false,
-    "obo_token_acquired": false
+    "user_name": "Alice Johnson",
+    "response_time_ms": 1523.45,
+    "agent_type": "microsoft-agent-framework"
   }
 }
 ```
 
-**With Authentication** (when REQUIRE_AUTH=true):
+**Example Requests**:
+
+**1. Get User Information** (calls payroll API):
+```bash
+curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is my employee information?"
+  }'
+```
+
+**2. Get PTO Balance** (calls payroll API):
+```bash
+curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "How much PTO do I have?"
+  }'
+```
+
+**3. Calculate** (routes to python-agent):
+```bash
+curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is 1234 times 5678?"
+  }'
+```
+
+**4. With Authentication** (when REQUIRE_AUTH=true):
 ```bash
 curl -X POST http://localhost:8001/agent \
   -H "Authorization: Bearer YOUR_USER_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Help me analyze data with pandas",
-    "preferred_agent": "auto"
+    "message": "Show me my PTO information and calculate my remaining days at 8 hours per day"
   }'
 ```
 
-**Without Authentication** (testing mode, REQUIRE_AUTH=false):
-```bash
-curl -X POST http://localhost:8001/agent \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Help me with C# and ASP.NET",
-    "preferred_agent": "auto"
-  }'
-```
+### `POST /agent/legacy` - Legacy Orchestrator Endpoint
+
+The original keyword-based routing endpoint (preserved for backward compatibility).
 
 ### `GET /agent`
 
@@ -272,7 +336,8 @@ Simple status check endpoint.
   "message": "Orchestrator is alive",
   "status": "healthy",
   "service": "orchestrator",
-  "auth_required": false
+  "auth_required": false,
+  "agent_framework_available": true
 }
 ```
 
@@ -327,6 +392,121 @@ Root endpoint with service information.
   }
 }
 ```
+
+## Microsoft Agent Framework Implementation
+
+### Agent Framework with Tools
+
+**File: `src/agent_framework_impl.py`** - Agent Framework integration
+
+The orchestrator uses Microsoft Agent Framework to create an intelligent AI agent with access to specialized tools:
+
+```python
+class AgentFrameworkService:
+    """Service for managing Microsoft Agent Framework agents."""
+
+    def _get_agent_tools(self):
+        """Get the list of tools available to the agent."""
+        return [
+            self.get_user_info,      # Payroll API: User information
+            self.get_user_pto,       # Payroll API: PTO data
+            self.calculate,          # Python Agent: Calculations
+        ]
+```
+
+### Tool 1: Get User Info (Payroll API with OBO)
+
+```python
+async def get_user_info(self) -> str:
+    """Get user's payroll information from the payroll API.
+
+    Retrieves:
+    - Name, Email, Department
+    - Employee ID, Job Title
+    - Manager name, Hire date
+
+    Requires OBO authentication.
+    """
+    # Exchange user JWT for OBO token with payroll scopes
+    obo_token = await get_obo_token(
+        self._current_user_token,
+        settings.PAYROLL_API_SCOPES
+    )
+
+    # Call payroll API with OBO token
+    response = await self.http_client.get(
+        f"{settings.PAYROLL_API_URL}/payroll/user-info",
+        headers={"Authorization": f"Bearer {obo_token}"}
+    )
+```
+
+### Tool 2: Get User PTO (Payroll API with OBO)
+
+```python
+async def get_user_pto(self) -> str:
+    """Get user's PTO balance and history.
+
+    Retrieves:
+    - Current balance, accrued, used
+    - Pending requests
+    - Upcoming PTO schedule
+
+    Requires OBO authentication.
+    """
+    # Exchange for OBO token
+    obo_token = await get_obo_token(
+        self._current_user_token,
+        settings.PAYROLL_API_SCOPES
+    )
+
+    # Call payroll API
+    response = await self.http_client.get(
+        f"{settings.PAYROLL_API_URL}/payroll/user-pto",
+        headers={"Authorization": f"Bearer {obo_token}"}
+    )
+```
+
+### Tool 3: Calculate (Python Agent with OBO)
+
+```python
+async def calculate(self, expression: str) -> str:
+    """Delegate mathematical calculations to Python agent.
+
+    Routes mathematics to specialized python-agent with:
+    - Mathematical calculations
+    - Data analysis
+    - Statistical operations
+
+    Requires OBO authentication.
+    """
+    # Exchange for OBO token with python agent scopes
+    obo_token = await get_obo_token(
+        self._current_user_token,
+        settings.PYTHON_AGENT_SCOPES
+    )
+
+    # Call python-agent
+    response = await self.http_client.post(
+        f"{settings.PYTHON_AGENT_URL}/agent",
+        json={"message": f"Please calculate: {expression}"},
+        headers={"Authorization": f"Bearer {obo_token}"}
+    )
+```
+
+### How the Agent Works
+
+1. **User sends message** to `POST /agent`
+2. **AI Agent analyzes** the request using Azure OpenAI
+3. **Agent selects tool(s)** based on request intent:
+   - "What's my PTO?" → `get_user_pto` tool
+   - "Who is my manager?" → `get_user_info` tool
+   - "Calculate 5 * 10" → `calculate` tool
+4. **Tool executes with OBO**:
+   - Gets user's JWT token
+   - Exchanges for OBO token with appropriate scopes
+   - Calls downstream API/agent with OBO token
+5. **Agent synthesizes response** from tool results
+6. **Returns natural language** answer to user
 
 ## OBO Flow Implementation Details
 
@@ -512,16 +692,79 @@ curl http://localhost:8001/health/agents
 
 ## Example Usage Scenarios
 
-### Scenario 1: Testing Without Auth (Local Development)
+### Scenario 1: Agent Framework - Payroll Information
 
 ```bash
-# 1. Start all services
-# Terminal 1: Python agent (port 8000)
-# Terminal 2: .NET agent (port 5000)
-# Terminal 3: Orchestrator (port 8001)
+# Start required services
+make run-orchestrator    # Terminal 1
+make run-dotnet-payroll  # Terminal 2
 
-# 2. Test orchestrator
+# Query user information
 curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is my current job title and department?"
+  }'
+
+# Response (AI agent uses get_user_info tool):
+# "Based on your payroll information, you are a Senior Software Engineer
+#  in the Engineering department. You report to Sarah Williams and have
+#  been with the company since January 15, 2020."
+```
+
+### Scenario 2: Agent Framework - PTO Balance
+
+```bash
+# Query PTO balance
+curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "How many vacation days do I have left?"
+  }'
+
+# Response (AI agent uses get_user_pto tool):
+# "You currently have 120 hours (15 days) of PTO available. This year
+#  you've accrued 160 hours and used 40 hours. You also have one pending
+#  request for 8 hours."
+```
+
+### Scenario 3: Agent Framework - Calculations
+
+```bash
+# Start python-agent for calculator
+make run-python-agent    # Terminal 3
+
+# Mathematical calculation
+curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "If I have 120 hours of PTO and take 8 hours per day, how many days is that?"
+  }'
+
+# Response (AI agent uses calculate tool):
+# "120 hours of PTO divided by 8 hours per day equals 15 days."
+```
+
+### Scenario 4: Agent Framework - Multi-Tool Request
+
+```bash
+# Complex query using multiple tools
+curl -X POST http://localhost:8001/agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Show me my PTO balance and calculate how many days that is at 8 hours per day"
+  }'
+
+# Response (AI agent uses get_user_pto + calculate tools):
+# "You have 120 hours of PTO available. At 8 hours per day, that equals
+#  15 vacation days. You've used 40 hours (5 days) so far this year."
+```
+
+### Scenario 5: Legacy Endpoint - Testing Without Auth
+
+```bash
+# Test legacy keyword-based routing
+curl -X POST http://localhost:8001/agent/legacy \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Help me with pandas",
@@ -534,7 +777,7 @@ curl -X POST http://localhost:8001/agent \
 # - auth_enabled: false
 ```
 
-### Scenario 2: Testing With Auth (Full OBO Flow)
+### Scenario 6: Testing With Auth (Full OBO Flow)
 
 ```bash
 # 1. Obtain user JWT from frontend authentication
@@ -545,43 +788,31 @@ curl -X POST http://localhost:8001/agent \
   -H "Authorization: Bearer $USER_JWT" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Analyze this dataset with pandas",
-    "preferred_agent": "auto"
+    "message": "What is my PTO balance?",
   }'
 
 # What happens:
 # 1. Orchestrator validates USER_JWT
-# 2. Orchestrator selects Python agent (pandas keyword)
-# 3. Orchestrator exchanges USER_JWT for OBO token with Python scopes
-# 4. Orchestrator calls Python agent with OBO token
-# 5. Python agent validates OBO token, sees original user identity
-# 6. Python agent executes and responds
-# 7. Orchestrator returns aggregated response
-```
-
-### Scenario 3: Explicit Agent Selection
-
-```bash
-# Force .NET agent even with Python keywords
-curl -X POST http://localhost:8001/agent \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Help me with pandas",
-    "preferred_agent": "dotnet"
-  }'
-
-# Response will show:
-# - selected_agent: "dotnet" (preference overrides intent)
+# 2. AI Agent analyzes message, selects get_user_pto tool
+# 3. Tool exchanges USER_JWT for OBO token with Payroll API scopes
+# 4. Tool calls Payroll API with OBO token
+# 5. Payroll API validates OBO token, sees original user identity
+# 6. Payroll API returns user-specific PTO data (RBAC enforced)
+# 7. AI Agent synthesizes natural language response
+# 8. Orchestrator returns response to user
 ```
 
 ## Key Files Explained
 
 | File | Purpose |
 |------|---------|
-| `src/api.py` | Main orchestrator endpoint - coordinates the entire OBO flow |
+| `src/api.py` | API endpoints - Agent Framework and legacy orchestration |
+| `src/agent_framework_impl.py` | **⭐ NEW** - Microsoft Agent Framework with OBO-secured tools |
 | `src/auth.py` | **⭐ CORE POC** - JWT validation & OBO token acquisition using MSAL |
-| `src/agent_selector.py` | Intent analysis to select Python or .NET sub-agent |
-| `src/sub_agent_client.py` | HTTP client for calling sub-agents with OBO tokens |
+| `src/agent_selector.py` | Intent analysis for legacy endpoint |
+| `src/sub_agent_client.py` | HTTP client for legacy sub-agent calls |
+| `src/audit.py` | Audit logging for security events |
+| `src/authorization.py` | Role-based access control |
 | `src/config.py` | Configuration management (env vars, URLs, scopes) |
 | `src/models.py` | Pydantic models for requests/responses |
 
@@ -632,13 +863,59 @@ curl http://localhost:3000/health/agents
 - Check token hasn't expired
 - Ensure frontend is requesting correct audience
 
-## Next Steps
+## Feature Highlights
 
-1. ✅ **Phase 1 Complete**: Orchestrator setup with OBO flow
-2. ⏳ **Phase 2**: Integrate Microsoft Agent Framework for AI responses
-3. ⏳ **Phase 3**: Add conversation state management
-4. ⏳ **Phase 4**: Implement multi-agent collaboration (calling multiple sub-agents)
-5. ⏳ **Phase 5**: Production hardening and monitoring
+### ✅ Implemented Features
+
+1. **Microsoft Agent Framework Integration**
+   - AI-powered agent with Azure OpenAI
+   - Intelligent tool selection based on user requests
+   - Thread-based conversation management
+   - Three specialized tools with OBO authentication
+
+2. **OBO Authentication Flow**
+   - JWT validation for user identity
+   - MSAL-based token exchange
+   - Scope-based access control
+   - Support for multiple downstream services
+
+3. **Payroll API Integration**
+   - Secure user information retrieval
+   - PTO balance and history
+   - User-scoped data access with OBO tokens
+
+4. **Calculator Tool**
+   - Delegates mathematics to Python agent
+   - Maintains user context via OBO
+
+5. **Legacy Orchestration**
+   - Backward-compatible keyword-based routing
+   - Direct sub-agent delegation
+
+### 🚀 Potential Enhancements
+
+1. **Advanced Agent Capabilities**
+   - Streaming responses for real-time feedback
+   - Multi-tool orchestration (parallel tool execution)
+   - Context-aware follow-up questions
+
+2. **Additional Tools**
+   - Calendar integration (schedule PTO)
+   - Email notifications
+   - Document generation
+   - Database queries
+
+3. **Production Hardening**
+   - Rate limiting
+   - Caching layer for API responses
+   - Comprehensive error handling
+   - Performance monitoring
+
+4. **Enterprise Features**
+   - Role-based tool access
+   - Audit logging enhancement
+   - Compliance reporting
+   - Multi-tenant support
 
 ## References
 
