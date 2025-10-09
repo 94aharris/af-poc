@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Identity.Web;
+using PayrollApi.Configuration;
 using PayrollApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +22,33 @@ if (requireAuth)
             options.TokenValidationParameters.ValidateAudience = true;
             options.TokenValidationParameters.ValidateLifetime = true;
             options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+
+            // Add event handlers for detailed logging
+            options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+            {
+                OnTokenValidated = context =>
+                {
+                    var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogInformation("✓ JWT token validated successfully");
+                    logger.LogInformation("  User: {User}", context.Principal?.Identity?.Name ?? "Unknown");
+                    logger.LogInformation("  OID: {Oid}", context.Principal?.FindFirst("oid")?.Value ?? "Not found");
+                    return Task.CompletedTask;
+                },
+                OnAuthenticationFailed = context =>
+                {
+                    var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogError("❌ JWT authentication failed: {Error}", context.Exception.Message);
+                    logger.LogError("  Exception: {Exception}", context.Exception);
+                    return Task.CompletedTask;
+                },
+                OnChallenge = context =>
+                {
+                    var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogWarning("⚠ JWT challenge issued: {Error}", context.Error ?? "No error");
+                    logger.LogWarning("  Error Description: {Description}", context.ErrorDescription ?? "No description");
+                    return Task.CompletedTask;
+                }
+            };
 
             // Accept both v1.0 and v2.0 tokens (important for OBO scenarios)
             options.TokenValidationParameters.ValidIssuers = new[]
@@ -75,6 +103,10 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
+// Configure options
+builder.Services.Configure<DeveloperUserConfiguration>(
+    builder.Configuration.GetSection("DeveloperUser"));
 
 // Register application services
 builder.Services.AddSingleton<IPayrollDataService, PayrollDataService>();

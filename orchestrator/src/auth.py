@@ -8,6 +8,7 @@ import httpx
 import logging
 from typing import Optional, Dict
 from src.config import settings
+from src.constants import TEST_USER_ID, TEST_USER_NAME, TEST_USER_EMAIL, TEST_USER_ROLES
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
@@ -70,8 +71,8 @@ class JWTValidator:
                 unverified_claims = jwt.get_unverified_claims(token)
                 logger.error(f"Token audience claim: {unverified_claims.get('aud')}")
                 logger.error(f"Token issuer claim: {unverified_claims.get('iss')}")
-            except:
-                pass
+            except Exception as decode_error:
+                logger.error(f"Failed to decode token for debugging: {str(decode_error)}")
             raise HTTPException(
                 status_code=401, detail=f"Invalid authentication credentials: {str(e)}"
             )
@@ -152,11 +153,11 @@ async def get_current_user(
     if not settings.REQUIRE_AUTH:
         # Return mock user for testing without auth
         return {
-            "oid": "test-user-id",
-            "name": "Test User",
-            "preferred_username": "test@example.com",
-            "email": "test@example.com",
-            "roles": ["admin"],  # Mock admin role for testing
+            "oid": TEST_USER_ID,
+            "name": TEST_USER_NAME,
+            "preferred_username": TEST_USER_EMAIL,
+            "email": TEST_USER_EMAIL,
+            "roles": TEST_USER_ROLES,
         }
 
     if not credentials:

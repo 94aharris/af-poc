@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using PayrollApi.Configuration;
 using PayrollApi.Models;
 
 namespace PayrollApi.Services;
@@ -9,9 +11,68 @@ namespace PayrollApi.Services;
 public class PayrollDataService : IPayrollDataService
 {
     private readonly ILogger<PayrollDataService> _logger;
+    private readonly Dictionary<string, UserInfo> _userInfoData;
+    private readonly Dictionary<string, UserPto> _userPtoData;
 
-    // Hardcoded user information data (simulates database)
-    private static readonly Dictionary<string, UserInfo> _userInfoData = new()
+    public PayrollDataService(
+        ILogger<PayrollDataService> logger,
+        IOptions<DeveloperUserConfiguration> developerUserConfig)
+    {
+        _logger = logger;
+
+        // Initialize with example data
+        _userInfoData = GetExampleUserInfoData();
+        _userPtoData = GetExampleUserPtoData();
+
+        // Add developer user if configured
+        var devConfig = developerUserConfig.Value;
+        if (devConfig.Enabled && !string.IsNullOrWhiteSpace(devConfig.Email))
+        {
+            _logger.LogInformation("Adding developer user from configuration: {Email}", devConfig.Email);
+
+            var devUserInfo = new UserInfo
+            {
+                UserId = devConfig.UserId,
+                Name = devConfig.Name,
+                Email = devConfig.Email,
+                Department = devConfig.Department,
+                EmployeeId = devConfig.EmployeeId,
+                JobTitle = devConfig.JobTitle,
+                Manager = devConfig.Manager,
+                HireDate = DateTime.TryParse(devConfig.HireDate, out var hireDate)
+                    ? hireDate
+                    : DateTime.Now
+            };
+
+            var devUserPto = new UserPto
+            {
+                UserId = devConfig.UserId,
+                CurrentBalanceHours = devConfig.PtoBalance.CurrentBalanceHours,
+                AccruedThisYearHours = devConfig.PtoBalance.AccruedThisYearHours,
+                UsedThisYearHours = devConfig.PtoBalance.UsedThisYearHours,
+                PendingRequestsHours = devConfig.PtoBalance.PendingRequestsHours,
+                MaxCarryoverHours = devConfig.PtoBalance.MaxCarryoverHours,
+                UpcomingPto = new List<PtoRequest>
+                {
+                    new PtoRequest
+                    {
+                        StartDate = DateTime.Now.AddDays(14),
+                        EndDate = DateTime.Now.AddDays(16),
+                        Hours = 24.0m,
+                        Status = "Pending",
+                        Type = "Vacation"
+                    }
+                }
+            };
+
+            _userInfoData[devConfig.UserId] = devUserInfo;
+            _userPtoData[devConfig.UserId] = devUserPto;
+        }
+    }
+
+    // Hardcoded example user information data (simulates database)
+    // For testing with your own email, add it to appsettings.Development.json under DeveloperUser section
+    private static Dictionary<string, UserInfo> GetExampleUserInfoData() => new()
     {
         ["00000000-0000-0000-0000-000000000001"] = new UserInfo
         {
@@ -70,8 +131,10 @@ public class PayrollDataService : IPayrollDataService
         }
     };
 
-    // Hardcoded PTO data (simulates database)
-    private static readonly Dictionary<string, UserPto> _userPtoData = new()
+    // Hardcoded example PTO data (simulates database)
+    // NOTE: Keys must match the UserInfo dictionary keys
+    // For testing with your own email, add it to appsettings.Development.json under DeveloperUser section
+    private static Dictionary<string, UserPto> GetExampleUserPtoData() => new()
     {
         ["00000000-0000-0000-0000-000000000001"] = new UserPto
         {
@@ -165,11 +228,6 @@ public class PayrollDataService : IPayrollDataService
         }
     };
 
-    public PayrollDataService(ILogger<PayrollDataService> logger)
-    {
-        _logger = logger;
-    }
-
     /// <summary>
     /// Get user information by user ID
     /// </summary>
@@ -201,6 +259,54 @@ public class PayrollDataService : IPayrollDataService
         }
 
         _logger.LogWarning("PTO data not found for user ID: {UserId}", userId);
+        return Task.FromResult<UserPto?>(null);
+    }
+
+    /// <summary>
+    /// Get user information by email address
+    /// </summary>
+    public Task<UserInfo?> GetUserInfoByEmailAsync(string email)
+    {
+        _logger.LogInformation("Retrieving user info for email: {Email}", email);
+
+        var userInfo = _userInfoData.Values.FirstOrDefault(u =>
+            u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+
+        if (userInfo != null)
+        {
+            _logger.LogInformation("User info found for email: {Email}", email);
+            return Task.FromResult<UserInfo?>(userInfo);
+        }
+
+        _logger.LogWarning("User info not found for email: {Email}", email);
+        return Task.FromResult<UserInfo?>(null);
+    }
+
+    /// <summary>
+    /// Get user PTO balance and history by email address
+    /// </summary>
+    public Task<UserPto?> GetUserPtoByEmailAsync(string email)
+    {
+        _logger.LogInformation("Retrieving PTO data for email: {Email}", email);
+
+        // First find the user by email to get their userId
+        var userInfo = _userInfoData.Values.FirstOrDefault(u =>
+            u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+
+        if (userInfo == null)
+        {
+            _logger.LogWarning("User not found for email: {Email}", email);
+            return Task.FromResult<UserPto?>(null);
+        }
+
+        // Then get their PTO data using userId
+        if (_userPtoData.TryGetValue(userInfo.UserId, out var userPto))
+        {
+            _logger.LogInformation("PTO data found for email: {Email}", email);
+            return Task.FromResult<UserPto?>(userPto);
+        }
+
+        _logger.LogWarning("PTO data not found for email: {Email}", email);
         return Task.FromResult<UserPto?>(null);
     }
 }

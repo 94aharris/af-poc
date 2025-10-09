@@ -62,26 +62,6 @@ class AgentFrameworkService:
     def _initialize_agent(self):
         """Initialize the Azure OpenAI agent with tools."""
         try:
-            # Check if Azure OpenAI is configured
-            # if not hasattr(settings, 'azure_openai_endpoint') or not settings.azure_openai_endpoint:
-            #     logger.warning("Azure OpenAI endpoint not configured. Agent will not be available.")
-            #     return
-
-            # # Create Azure OpenAI client with authentication
-            # credential = self._get_credential()
-
-            # # Build client parameters
-            # client_params = {
-            #     "endpoint": settings.azure_openai_endpoint,
-            #     "deployment_name": settings.azure_openai_deployment,
-            # }
-
-            # # Use API key if provided, otherwise use credential
-            # if hasattr(settings, 'azure_openai_api_key') and settings.azure_openai_api_key:
-            #     client_params["api_key"] = settings.azure_openai_api_key
-            # else:
-            #     client_params["credential"] = credential
-
             client = AzureOpenAIChatClient(
                 endpoint=settings.AZURE_OPENAI_ENDPOINT,
                 deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
@@ -90,19 +70,12 @@ class AgentFrameworkService:
 
             # Create agent with instructions and tools
             self.agent = client.create_agent(
-                name=(
-                    settings.agent_name if hasattr(settings, "agent_name") else "OrchestratorAgent"
-                ),
-                instructions=(
-                    settings.agent_instructions
-                    if hasattr(settings, "agent_instructions")
-                    else "You are an intelligent orchestrator agent that helps users with payroll information and calculations. "
-                    "Use the available tools to get user payroll data and perform mathematical calculations."
-                ),
+                name=settings.agent_name,
+                instructions=settings.agent_instructions,
                 tools=self._get_agent_tools(),
             )
 
-            logger.info(f"Agent initialized successfully")
+            logger.info("Agent initialized successfully")
 
         except Exception as e:
             logger.error(f"Failed to initialize agent: {e}")
@@ -142,18 +115,25 @@ class AgentFrameworkService:
         """
         try:
             # Acquire OBO token for payroll API
-            payroll_scopes = getattr(settings, "PAYROLL_API_SCOPES", settings.DOTNET_AGENT_SCOPES)
+            payroll_scopes = settings.PAYROLL_API_SCOPES
+
+            logger.debug(f"OBO Token Check - REQUIRE_AUTH: {settings.REQUIRE_AUTH}, "
+                        f"Has user token: {self._current_user_token is not None}, "
+                        f"Payroll scopes: {payroll_scopes}")
 
             # Get OBO token from stored user token
             headers = {}
             if settings.REQUIRE_AUTH and self._current_user_token:
+                logger.info("Acquiring OBO token for payroll API")
                 # Exchange for OBO token for payroll API
                 obo_token = await get_obo_token(self._current_user_token, payroll_scopes)
                 headers["Authorization"] = f"Bearer {obo_token}"
+                logger.debug("OBO token acquired and added to Authorization header")
+            else:
+                logger.warning("Skipping OBO token - calling API without authentication")
 
             # Call payroll API
-            payroll_url = getattr(settings, "PAYROLL_API_URL", "http://localhost:5100")
-            url = f"{payroll_url}/payroll/user-info"
+            url = f"{settings.PAYROLL_API_URL}/payroll/user-info"
 
             logger.info(f"Calling payroll API for user info: {url}")
             response = await self.http_client.get(url, headers=headers)
@@ -197,7 +177,7 @@ class AgentFrameworkService:
         """
         try:
             # Acquire OBO token for payroll API
-            payroll_scopes = getattr(settings, "PAYROLL_API_SCOPES", settings.DOTNET_AGENT_SCOPES)
+            payroll_scopes = settings.PAYROLL_API_SCOPES
 
             # Get OBO token from stored user token
             headers = {}
@@ -206,8 +186,7 @@ class AgentFrameworkService:
                 headers["Authorization"] = f"Bearer {obo_token}"
 
             # Call payroll API
-            payroll_url = getattr(settings, "PAYROLL_API_URL", "http://localhost:5100")
-            url = f"{payroll_url}/payroll/user-pto"
+            url = f"{settings.PAYROLL_API_URL}/payroll/user-pto"
 
             logger.info(f"Calling payroll API for PTO data: {url}")
             response = await self.http_client.get(url, headers=headers)
