@@ -1,0 +1,23 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "AgentService.LLM": "Debug"
+    }
+  },
+  "AllowedHosts": "*",
+  "PayrollApi": {
+    "Url": "http://localhost:5100"
+  },
+  "AzureOpenAI": {
+    "Endpoint": "https://your-resource.openai.azure.com/",
+    "DeploymentName": "gpt-4o-mini",
+    "UseAzureCliCredential": true,
+    "ApiKey": ""
+  },
+  "Agent": {
+    "UseLegacyClaudeClient": false
+  },
+  "_comment": "Copy this file to appsettings.local.json and configure your Azure OpenAI settings. Run 'az login' before starting if using Azure CLI credential."
+}
