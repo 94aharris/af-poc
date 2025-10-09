@@ -5,14 +5,46 @@ using PayrollApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure JWT Authentication with Azure AD
-// This validates incoming JWT tokens from users or agents
+// Configure JWT Authentication with Azure AD for OBO (On-Behalf-Of) Flow
+// This validates incoming JWT tokens that have been obtained via OBO from the orchestrator
 var requireAuth = builder.Configuration.GetValue<bool>("Auth:RequireAuthentication", false);
 
 if (requireAuth)
 {
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+        .AddMicrosoftIdentityWebApi(options =>
+        {
+            builder.Configuration.Bind("AzureAd", options);
+
+            // Configure token validation for OBO tokens
+            options.TokenValidationParameters.ValidateIssuer = true;
+            options.TokenValidationParameters.ValidateAudience = true;
+            options.TokenValidationParameters.ValidateLifetime = true;
+            options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+
+            // Accept both v1.0 and v2.0 tokens (important for OBO scenarios)
+            options.TokenValidationParameters.ValidIssuers = new[]
+            {
+                $"https://login.microsoftonline.com/{builder.Configuration["AzureAd:TenantId"]}/v2.0",
+                $"https://sts.windows.net/{builder.Configuration["AzureAd:TenantId"]}/"
+            };
+
+            // Ensure audience matches the API's client ID
+            options.TokenValidationParameters.ValidAudiences = new[]
+            {
+                builder.Configuration["AzureAd:ClientId"],
+                builder.Configuration["AzureAd:Audience"],
+                $"api://{builder.Configuration["AzureAd:ClientId"]}"
+            };
+
+            // Map 'oid' claim to NameIdentifier for easy access
+            options.TokenValidationParameters.NameClaimType = "preferred_username";
+            options.TokenValidationParameters.RoleClaimType = "roles";
+
+        }, options =>
+        {
+            builder.Configuration.Bind("AzureAd", options);
+        });
 
     builder.Services.AddAuthorization();
 }

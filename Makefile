@@ -128,9 +128,9 @@ run-dotnet-payroll: ## Run .NET payroll API service (port 5100)
 	@echo "$(CYAN)Starting .NET payroll API on port 5100...$(NC)"
 	@cd dotnet-payroll-api && dotnet run --project PayrollApi
 
-run-frontend: ## Run frontend development server (port 3001)
-	@echo "$(CYAN)Starting frontend on port 3001...$(NC)"
-	@cd frontend && npm run dev -- --port 3001
+run-frontend: ## Run frontend development server (port 3000)
+	@echo "$(CYAN)Starting frontend on port 3000...$(NC)"
+	@cd frontend && npm run dev -- --port 3000
 
 ##@ Run All Services
 
@@ -142,7 +142,7 @@ run-all: ## Run all services concurrently (requires tmux or separate terminals)
 	@echo "Terminal 2: $(CYAN)make run-dotnet-agent$(NC)    (port 5000)"
 	@echo "Terminal 3: $(CYAN)make run-dotnet-payroll$(NC)  (port 5100)"
 	@echo "Terminal 4: $(CYAN)make run-orchestrator$(NC)    (port 8001)"
-	@echo "Terminal 5: $(CYAN)make run-frontend$(NC)        (port 3001)"
+	@echo "Terminal 5: $(CYAN)make run-frontend$(NC)        (port 3000)"
 
 dev: check-tmux ## Start all services in tmux session (recommended)
 	@echo "$(CYAN)Starting all services in tmux session 'af-poc'...$(NC)"
@@ -150,7 +150,7 @@ dev: check-tmux ## Start all services in tmux session (recommended)
 	@tmux new-window -t af-poc -n dotnet-agent "cd dotnet-agent && dotnet run --project AgentService"
 	@tmux new-window -t af-poc -n dotnet-payroll "cd dotnet-payroll-api && dotnet run --project PayrollApi"
 	@tmux new-window -t af-poc -n orchestrator "cd orchestrator && uv run --prerelease=allow uvicorn src.main:app --reload --port 8001"
-	@tmux new-window -t af-poc -n frontend "cd frontend && npm run dev -- --port 3001"
+	@tmux new-window -t af-poc -n frontend "cd frontend && npm run dev -- --port 3000"
 	@echo "$(GREEN)✓ All services started in tmux session 'af-poc'$(NC)"
 	@echo ""
 	@echo "$(CYAN)Attach to session:$(NC) tmux attach -t af-poc"
@@ -184,8 +184,8 @@ health: ## Check health of all services
 	@echo "$(CYAN)Orchestrator (port 8001):$(NC)"
 	@curl -s http://localhost:8001/health/agents 2>/dev/null | python3 -m json.tool || echo "$(RED)✗ Not responding$(NC)"
 	@echo ""
-	@echo "$(CYAN)Frontend (port 3001):$(NC)"
-	@curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 2>/dev/null | grep -q "200" && echo "$(GREEN)✓ Responding$(NC)" || echo "$(RED)✗ Not responding$(NC)"
+	@echo "$(CYAN)Frontend (port 3000):$(NC)"
+	@curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200" && echo "$(GREEN)✓ Responding$(NC)" || echo "$(RED)✗ Not responding$(NC)"
 
 status: health ## Alias for health check
 
@@ -280,7 +280,7 @@ ports: ## Show port allocations
 	@echo "  $(GREEN).NET Agent:$(NC)        http://localhost:5000"
 	@echo "  $(GREEN).NET Payroll API:$(NC)  http://localhost:5100"
 	@echo "  $(GREEN)Orchestrator:$(NC)      http://localhost:8001"
-	@echo "  $(GREEN)Frontend:$(NC)          http://localhost:3001"
+	@echo "  $(GREEN)Frontend:$(NC)          http://localhost:3000"
 
 endpoints: ## Show available API endpoints
 	@echo "$(CYAN)Available Endpoints:$(NC)"
@@ -302,7 +302,7 @@ endpoints: ## Show available API endpoints
 	@echo "  GET  /payroll/user-pto  - Get PTO balance"
 	@echo "  GET  /health            - Health check"
 	@echo ""
-	@echo "$(GREEN)Frontend (port 3001):$(NC)"
+	@echo "$(GREEN)Frontend (port 3000):$(NC)"
 	@echo "  Web UI                 - Main application interface"
 
 info: ports endpoints ## Show all service information

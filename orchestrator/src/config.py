@@ -23,9 +23,11 @@ class Settings(BaseSettings):
     PAYROLL_API_URL: str = "http://localhost:5100"
 
     # OBO Scopes for sub-agents
-    PYTHON_AGENT_SCOPES: List[str] = ["api://python-agent/.default"]
-    DOTNET_AGENT_SCOPES: List[str] = ["api://dotnet-agent/.default"]
-    PAYROLL_API_SCOPES: List[str] = ["api://payroll-api/.default"]
+    # Use 'access_as_user' for delegated permissions (preserves user identity)
+    # These should match the API scopes exposed by each service
+    PYTHON_AGENT_SCOPES: List[str] = ["api://python-agent/access_as_user"]
+    DOTNET_AGENT_SCOPES: List[str] = ["api://dotnet-agent/access_as_user"]
+    PAYROLL_API_SCOPES: List[str] = ["api://payroll-api/access_as_user"]
 
     # API Configuration
     API_PORT: int = 8001  # Orchestrator port

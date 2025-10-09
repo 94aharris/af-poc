@@ -49,3 +49,6 @@ htmlcov/
 # UV
 .uv/
 uv.lock
+
+# note docs (for now)
+_docs/
