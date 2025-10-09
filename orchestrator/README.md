@@ -19,7 +19,6 @@ This orchestrator demonstrates:
 3. **OBO Token Exchange**: **THE CORE POC** - Exchanges user JWT for scoped OBO tokens for downstream services
 4. **Payroll API Tools**: Secure access to user information and PTO data via OBO authentication
 5. **Calculator Tool**: Delegates mathematics questions to specialized Python agent
-6. **Legacy Agent Selection**: Keyword-based routing to Python or .NET sub-agents (legacy endpoint)
 
 ## Architecture
 
@@ -94,14 +93,19 @@ orchestrator/
 ├── README.md                       # This file
 ├── pyproject.toml                 # UV project configuration
 ├── .python-version                # Python version
+├── docs/                          # Documentation folder
+│   ├── AZURE_AD_SETUP.md          # Azure AD setup guide
+│   ├── OBO_SETUP_INDEX.md         # OBO setup index
+│   └── ... (other setup guides)
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                    # FastAPI application entry
 │   ├── api.py                     # API endpoints ⭐
-│   ├── agent_framework_impl.py    # Agent Framework integration ⭐⭐ NEW
+│   ├── agent_framework_impl.py    # Agent Framework integration ⭐⭐
 │   ├── auth.py                    # JWT validation & OBO flow ⭐⭐
-│   ├── agent_selector.py          # Intent analysis (legacy)
-│   ├── sub_agent_client.py        # Sub-agent HTTP client (legacy)
+│   ├── constants.py               # Application constants
+│   ├── agent_selector.py          # Intent analysis (optional)
+│   ├── sub_agent_client.py        # Sub-agent HTTP client (optional)
 │   ├── audit.py                   # Audit logging
 │   ├── authorization.py           # Authorization service
 │   ├── intelligent_routing.py     # Claude-based routing (optional)
@@ -176,7 +180,7 @@ cd orchestrator
 uv sync
 
 # Run the application
-uv run uvicorn src.main:app --reload --port 3000
+uv run uvicorn src.main:app --reload --port 8001
 ```
 
 ### Configuration
@@ -249,7 +253,7 @@ uv run pytest tests/test_agent_selector.py -v
 
 ## API Endpoints
 
-### `POST /agent` ⭐ Microsoft Agent Framework Endpoint (NEW - Primary)
+### `POST /agent` ⭐ Microsoft Agent Framework Endpoint (Primary)
 
 The primary endpoint using Microsoft Agent Framework with intelligent tool use and OBO authentication.
 
@@ -321,10 +325,6 @@ curl -X POST http://localhost:8001/agent \
     "message": "Show me my PTO information and calculate my remaining days at 8 hours per day"
   }'
 ```
-
-### `POST /agent/legacy` - Legacy Orchestrator Endpoint
-
-The original keyword-based routing endpoint (preserved for backward compatibility).
 
 ### `GET /agent`
 
@@ -671,7 +671,7 @@ This will:
 uv sync
 
 # Run development server
-uv run uvicorn src.main:app --reload --port 3000
+uv run uvicorn src.main:app --reload --port 8001
 
 # Format code
 uv run black src/
@@ -695,9 +695,9 @@ curl http://localhost:8001/health/agents
 ### Scenario 1: Agent Framework - Payroll Information
 
 ```bash
-# Start required services
-make run-orchestrator    # Terminal 1
-make run-dotnet-payroll  # Terminal 2
+# Start required services (in separate terminals)
+cd orchestrator && uv run uvicorn src.main:app --reload --port 8001    # Terminal 1
+cd dotnet-payroll-api && dotnet run --project PayrollApi               # Terminal 2
 
 # Query user information
 curl -X POST http://localhost:8001/agent \
@@ -731,8 +731,8 @@ curl -X POST http://localhost:8001/agent \
 ### Scenario 3: Agent Framework - Calculations
 
 ```bash
-# Start python-agent for calculator
-make run-python-agent    # Terminal 3
+# Start python-agent for calculator (in addition to orchestrator)
+cd python-agent && uv run uvicorn src.main:app --reload --port 8000    # Terminal 3
 
 # Mathematical calculation
 curl -X POST http://localhost:8001/agent \
@@ -760,24 +760,7 @@ curl -X POST http://localhost:8001/agent \
 #  15 vacation days. You've used 40 hours (5 days) so far this year."
 ```
 
-### Scenario 5: Legacy Endpoint - Testing Without Auth
-
-```bash
-# Test legacy keyword-based routing
-curl -X POST http://localhost:8001/agent/legacy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Help me with pandas",
-    "preferred_agent": "auto"
-  }'
-
-# Response will show:
-# - selected_agent: "python"
-# - sub_agent called: Python agent
-# - auth_enabled: false
-```
-
-### Scenario 6: Testing With Auth (Full OBO Flow)
+### Scenario 5: Testing With Auth (Full OBO Flow)
 
 ```bash
 # 1. Obtain user JWT from frontend authentication
@@ -806,15 +789,17 @@ curl -X POST http://localhost:8001/agent \
 
 | File | Purpose |
 |------|---------|
-| `src/api.py` | API endpoints - Agent Framework and legacy orchestration |
-| `src/agent_framework_impl.py` | **⭐ NEW** - Microsoft Agent Framework with OBO-secured tools |
+| `src/api.py` | API endpoints - Agent Framework orchestration |
+| `src/agent_framework_impl.py` | **⭐** Microsoft Agent Framework with OBO-secured tools |
 | `src/auth.py` | **⭐ CORE POC** - JWT validation & OBO token acquisition using MSAL |
-| `src/agent_selector.py` | Intent analysis for legacy endpoint |
-| `src/sub_agent_client.py` | HTTP client for legacy sub-agent calls |
+| `src/constants.py` | Application constants (test user values, etc.) |
+| `src/agent_selector.py` | Intent analysis (optional, for advanced routing) |
+| `src/sub_agent_client.py` | HTTP client for sub-agent calls (optional) |
 | `src/audit.py` | Audit logging for security events |
 | `src/authorization.py` | Role-based access control |
 | `src/config.py` | Configuration management (env vars, URLs, scopes) |
 | `src/models.py` | Pydantic models for requests/responses |
+| `src/intelligent_routing.py` | Claude-based intelligent routing (optional) |
 
 ## Security Considerations
 
@@ -844,10 +829,10 @@ curl -X POST http://localhost:8001/agent \
 ```bash
 # Check if sub-agents are running
 curl http://localhost:8000/health  # Python agent
-curl http://localhost:5000/health  # .NET agent
+curl http://localhost:5100/health  # Payroll API
 
 # Check orchestrator can reach them
-curl http://localhost:3000/health/agents
+curl http://localhost:8001/health/agents
 ```
 
 ### OBO token acquisition fails
@@ -887,10 +872,6 @@ curl http://localhost:3000/health/agents
 4. **Calculator Tool**
    - Delegates mathematics to Python agent
    - Maintains user context via OBO
-
-5. **Legacy Orchestration**
-   - Backward-compatible keyword-based routing
-   - Direct sub-agent delegation
 
 ### 🚀 Potential Enhancements
 

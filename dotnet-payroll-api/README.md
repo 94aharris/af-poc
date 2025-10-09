@@ -32,23 +32,27 @@ dotnet-payroll-api/
 ├── PayrollApi.sln
 ├── PayrollApi/
 │   ├── PayrollApi.csproj
-│   ├── Program.cs                  # JWT auth configuration
-│   ├── appsettings.json           # Configuration (auth disabled by default)
-│   ├── appsettings.Development.json
+│   ├── Program.cs                      # JWT auth configuration
+│   ├── appsettings.json                # Configuration (auth disabled by default)
+│   ├── appsettings.Development.json    # Development config (gitignored - for personal data)
+│   ├── appsettings.local.json          # Local config (gitignored)
+│   │
+│   ├── Configuration/
+│   │   └── DeveloperUserConfiguration.cs  # Developer user config model
 │   │
 │   ├── Controllers/
-│   │   └── PayrollController.cs   # /user-info & /user-pto endpoints
+│   │   └── PayrollController.cs        # /user-info & /user-pto endpoints
 │   │
 │   ├── Models/
-│   │   ├── UserInfo.cs           # User information model
-│   │   ├── UserPto.cs            # PTO balance model
-│   │   └── ErrorResponse.cs      # Error response model
+│   │   ├── UserInfo.cs                 # User information model
+│   │   ├── UserPto.cs                  # PTO balance model
+│   │   └── ErrorResponse.cs            # Error response model
 │   │
 │   └── Services/
 │       ├── IPayrollDataService.cs
-│       └── PayrollDataService.cs  # Hardcoded test data
+│       └── PayrollDataService.cs       # In-memory data service with config support
 │
-└── README.md                       # This file
+└── README.md                            # This file
 ```
 
 ## Technology Stack
@@ -346,9 +350,11 @@ The API will be available at:
 - **HTTP**: http://localhost:5100
 - **HTTPS**: https://localhost:5101
 
-## Hardcoded Test Data
+## Test Data Configuration
 
-The API includes hardcoded data for 5 test users:
+### Example Users (Always Available)
+
+The API includes hardcoded example data for 5 test users:
 
 | User ID | Name | Department | Employee ID | PTO Balance |
 |---------|------|------------|-------------|-------------|
@@ -357,6 +363,67 @@ The API includes hardcoded data for 5 test users:
 | `00000000-0000-0000-0000-000000000003` | Carol Williams | Sales | EMP003 | 100 hours |
 | `00000000-0000-0000-0000-000000000004` | David Chen | Engineering | EMP004 | 200 hours |
 | `00000000-0000-0000-0000-000000000005` | Emma Davis | Human Resources | EMP005 | 64 hours |
+
+### Developer User Configuration (Your Personal Data)
+
+To test with your own email address without committing personal information to the repository, use the `DeveloperUser` configuration in `appsettings.Development.json`:
+
+**Step 1**: The `appsettings.json` contains example configuration (safe to commit):
+
+```json
+{
+  "DeveloperUser": {
+    "Enabled": false,
+    "UserId": "dev-user-example",
+    "Name": "Developer User",
+    "Email": "developer@example.com",
+    "Department": "Engineering",
+    "EmployeeId": "DEV001",
+    "JobTitle": "Software Engineer",
+    "Manager": "Engineering Manager",
+    "HireDate": "2024-01-01",
+    "PtoBalance": {
+      "CurrentBalanceHours": 240.0,
+      "AccruedThisYearHours": 240.0,
+      "UsedThisYearHours": 0.0,
+      "PendingRequestsHours": 0.0,
+      "MaxCarryoverHours": 80.0
+    }
+  }
+}
+```
+
+**Step 2**: Override with your real information in `appsettings.Development.json` (gitignored):
+
+```json
+{
+  "DeveloperUser": {
+    "Enabled": true,
+    "UserId": "your-user-id",
+    "Name": "Your Name",
+    "Email": "your.email@example.com",
+    "Department": "Engineering",
+    "EmployeeId": "EMP998",
+    "JobTitle": "Senior Software Engineer",
+    "Manager": "Engineering Manager",
+    "HireDate": "2024-01-01",
+    "PtoBalance": {
+      "CurrentBalanceHours": 240.0,
+      "AccruedThisYearHours": 240.0,
+      "UsedThisYearHours": 0.0,
+      "PendingRequestsHours": 0.0,
+      "MaxCarryoverHours": 80.0
+    }
+  }
+}
+```
+
+**Important Notes**:
+- ✅ `appsettings.Development.json` is **gitignored** - your personal email is never committed
+- ✅ Set `Enabled: true` to load your user data automatically on startup
+- ✅ The email should match your Azure AD email for authentication testing
+- ✅ The `UserId` should match the `oid` or `email` claim from your JWT token
+- ✅ When enabled, your user is dynamically added to the in-memory data store at startup
 
 ## Testing
 
@@ -551,14 +618,45 @@ serverOptions.ListenLocalhost(5102); // Different port
 
 **Symptoms**: Returns 404 even with valid JWT
 
-**Solution**: The `oid` claim in your JWT must match one of the hardcoded user IDs:
-- `00000000-0000-0000-0000-000000000001`
-- `00000000-0000-0000-0000-000000000002`
-- `00000000-0000-0000-0000-000000000003`
-- `00000000-0000-0000-0000-000000000004`
-- `00000000-0000-0000-0000-000000000005`
+**Solution**: The email or `oid` claim in your JWT must match one of the available users. You have two options:
 
-For testing, you can update the hardcoded data in `Services/PayrollDataService.cs` to match your test user's `oid`.
+**Option 1: Use Developer User Configuration** (Recommended)
+1. Edit `appsettings.Development.json`
+2. Add your email and user information to the `DeveloperUser` section
+3. Set `Enabled: true`
+4. Restart the API - your user will be loaded automatically
+
+**Option 2: Use Example Users**
+Use one of the hardcoded example user IDs:
+- `00000000-0000-0000-0000-000000000001` (alice.johnson@contoso.com)
+- `00000000-0000-0000-0000-000000000002` (bob.smith@contoso.com)
+- `00000000-0000-0000-0000-000000000003` (carol.williams@contoso.com)
+- `00000000-0000-0000-0000-000000000004` (david.chen@contoso.com)
+- `00000000-0000-0000-0000-000000000005` (emma.davis@contoso.com)
+
+**Note**: The API now matches users by **email** from the JWT token (not just by `oid`).
+
+### Developer User Not Loading
+
+**Symptoms**: Your personal user from `appsettings.Development.json` is not available
+
+**Checklist**:
+1. ✅ Verify `DeveloperUser.Enabled` is set to `true`
+2. ✅ Check that you're running in Development environment:
+   ```bash
+   # Set environment variable
+   export ASPNETCORE_ENVIRONMENT=Development
+   dotnet run
+   ```
+3. ✅ Verify the file is named exactly `appsettings.Development.json` (case-sensitive)
+4. ✅ Restart the API after making changes to configuration
+5. ✅ Check logs for "Adding developer user from configuration" message
+
+**Verify Developer User is Loaded**:
+```bash
+# The API logs this on startup if developer user is enabled:
+# "Adding developer user from configuration: your.email@example.com"
+```
 
 ### Cross-User Access Returns 403
 

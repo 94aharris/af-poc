@@ -9,38 +9,35 @@ This Python implementation demonstrates a FastAPI-based agent service using the 
 - **Python**: 3.11+
 - **Package Manager**: UV (ultra-fast Python package installer and resolver)
 - **Web Framework**: FastAPI + Uvicorn
-- **Agent Framework**: `agent-framework` (Microsoft Agent Framework - unified framework)
-- **Agent Backends**:
-  - Claude CLI (default) - Shell command integration
-  - Local LLM via HTTP (Ollama support)
-  - OpenAI-compatible APIs (LM Studio, vLLM, etc.)
-- **Authentication**:
-  - `msal` - Microsoft Authentication Library for Python (Phase 3)
-  - `python-jose[cryptography]` - JWT validation (Phase 3)
-  - `azure-identity` - Azure credential management
-- **HTTP Client**: `httpx` - For async API calls
+- **Agent Framework**: `agent-framework` (Microsoft Agent Framework)
+- **LLM Provider**: Azure OpenAI
+- **Authentication**: `azure-identity` - Azure credential management
 - **Validation**: `pydantic` - Data validation (built into FastAPI)
 
 ## Project Structure
 
 ```
 python-agent/
-├── README.md                   # This file
-├── pyproject.toml             # UV project configuration & dependencies
-├── .python-version            # Python version specification
+├── README.md                      # This file
+├── README_AGENT_FRAMEWORK.md      # Microsoft Agent Framework documentation
+├── pyproject.toml                 # UV project configuration & dependencies
+├── .python-version                # Python version specification
 ├── src/
 │   ├── __init__.py
-│   ├── main.py               # FastAPI application entry point
-│   ├── api.py                # API endpoints (/agent)
-│   ├── agent.py              # Microsoft Agent Framework integration
-│   ├── auth.py               # JWT validation & OBO flow
-│   ├── config.py             # Configuration management
-│   └── models.py             # Pydantic models for requests/responses
+│   ├── main.py                    # FastAPI application entry point
+│   ├── api.py                     # API endpoints
+│   ├── agent_framework_impl.py    # Microsoft Agent Framework implementation
+│   ├── workflows.py               # Workflow orchestration examples
+│   ├── config.py                  # Configuration management
+│   └── models.py                  # Pydantic models for requests/responses
 ├── tests/
-│   ├── __init__.py
-│   ├── test_api.py
-│   └── test_auth.py
-└── .env.example              # Environment variable template
+│   └── __init__.py
+├── examples/
+│   ├── agent_example.py           # Simple agent example
+│   ├── workflow_agent_example.py  # Multi-agent workflow example
+│   └── workflow_simple_example.py # Basic workflow example
+├── test_agent.py                  # Quick agent configuration test
+└── .env.example                   # Environment variable template
 ```
 
 ## Getting Started
@@ -72,9 +69,6 @@ The project has already been initialized with the following structure and depend
 - `pydantic-settings` (>=2.1.0) - Configuration management
 - `agent-framework` - Microsoft Agent Framework (installed with prerelease flag)
 - `azure-identity` (>=1.15.0) - Azure credential management
-- `httpx` - Async HTTP client for local LLM integration
-
-**Note:** Authentication packages (`msal`, `python-jose`) for OBO flow will be added in Phase 3.
 
 To build and run:
 
@@ -123,20 +117,33 @@ uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
 ### Testing
 
 ```bash
-# Run all tests
-uv run pytest
+# Quick agent configuration test
+python test_agent.py
 
-# Run with coverage
-uv run pytest --cov=src --cov-report=html
+# Test the health endpoint
+curl http://localhost:8000/health
 
-# Test the /agent endpoint
+# Test the agent status endpoint
 curl http://localhost:8000/agent
-# Expected response: {"message": "it's alive", "status": "healthy"}
+
+# Test the agent endpoint with a message
+curl -X POST http://localhost:8000/agent \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is 2 + 2?"}'
+
+# Test workflow endpoints
+curl -X POST http://localhost:8000/workflow/document \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Write about artificial intelligence"}'
+
+curl -X POST http://localhost:8000/workflow/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Cloud computing migration"}'
 ```
 
-## Implementation Details
+## Implementation Status
 
-### Phase 1: Basic API Endpoint (Current)
+### ✅ Phase 1: Basic FastAPI Service
 
 **File: `src/main.py`**
 ```python
@@ -202,150 +209,59 @@ class AgentResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 ```
 
-### Phase 2: Agent Framework Integration ✅ IMPLEMENTED
+### ✅ Phase 2: Microsoft Agent Framework Integration
 
-The agent now supports **multiple backend options** for flexibility:
+The service uses Azure OpenAI through the Microsoft Agent Framework with function tools.
 
-**File: `src/agent.py`**
+**File: `src/agent_framework_impl.py`**
+
+Key features:
+- Azure OpenAI client with API key or Azure credential authentication
+- Thread-based conversation state management
+- Function tools: `get_weather`, `calculate`, `search_files`
+- Streaming and non-streaming response support
+
+Example usage:
 ```python
-import os
-import json
-import asyncio
-from typing import Optional, Dict
-import httpx
-from src.config import settings
+from src.agent_framework_impl import agent_framework_service
 
-class AgentService:
-    """Service for managing different agent backends."""
-
-    def __init__(self):
-        self.claude_sessions: Dict[str, str] = {}  # conversation_id -> session_id
-
-    async def run_shell_agent(self, message: str, conversation_id: Optional[str] = None) -> str:
-        """Run Claude Code in headless mode using the CLI (DEFAULT BACKEND)"""
-        args = ["claude", "-p", "--output-format", "json"]
-
-        session_id = self.claude_sessions.get(conversation_id) if conversation_id else None
-        if session_id:
-            args.extend(["--resume", session_id])
-
-        process_env = os.environ.copy()
-
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=process_env,
-        )
-
-        stdout, stderr = await process.communicate(input=message.encode())
-
-        if process.returncode != 0:
-            return f"Error invoking Claude: {stderr.decode().strip()}"
-
-        try:
-            payload = json.loads(stdout.decode())
-            response_text = payload.get("result", "")
-
-            if not response_text:
-                response_text = stdout.decode().strip()
-
-            # Store session for conversation continuity
-            new_session = payload.get("session_id")
-            if new_session and conversation_id:
-                self.claude_sessions[conversation_id] = new_session
-        except json.JSONDecodeError:
-            response_text = stdout.decode().strip()
-
-        return response_text
-
-    async def run_local_llm_http(self, message: str, conversation_id: Optional[str] = None) -> str:
-        """Call local LLM via HTTP (Ollama)"""
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    "http://localhost:11434/api/generate",
-                    json={"model": "llama2", "prompt": message, "stream": False}
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data.get("response", "No response from local LLM")
-        except httpx.ConnectError:
-            return "Error: Could not connect to local LLM at http://localhost:11434"
-        except Exception as e:
-            return f"Error calling local LLM: {str(e)}"
-
-    async def run_openai_compatible(self, message: str, conversation_id: Optional[str] = None) -> str:
-        """Use OpenAI-compatible API (LM Studio, vLLM, etc.)"""
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    "http://localhost:1234/v1/chat/completions",
-                    json={
-                        "model": "local-model",
-                        "messages": [
-                            {"role": "system", "content": settings.agent_instructions},
-                            {"role": "user", "content": message}
-                        ],
-                        "temperature": 0.7,
-                    },
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-        except httpx.ConnectError:
-            return "Error: Could not connect to OpenAI-compatible endpoint at http://localhost:1234"
-        except Exception as e:
-            return f"Error calling OpenAI-compatible API: {str(e)}"
-
-    async def run_agent(self, message: str, conversation_id: Optional[str] = None) -> str:
-        """Main entry point - currently uses Claude CLI backend"""
-        return await self.run_shell_agent(message, conversation_id)
+# Run agent with conversation context
+response = await agent_framework_service.run_agent(
+    message="What's the weather in Seattle?",
+    conversation_id="user-123"
+)
 ```
 
-**Backend Switching**: Change line 184 in `src/agent.py`:
-- `return await self.run_shell_agent(message, conversation_id)` ← **Current (Claude CLI)**
-- `return await self.run_local_llm_http(message, conversation_id)`
-- `return await self.run_openai_compatible(message, conversation_id)`
+### ✅ Phase 3: Workflow Orchestration
 
-**File: `src/config.py`**
+The service includes workflow examples for multi-agent coordination.
+
+**File: `src/workflows.py`**
+
+Two workflow types implemented:
+
+1. **Document Processing Workflow** (Sequential)
+   - Writer agent creates content
+   - Editor agent improves content
+   - Returns polished document
+
+2. **Multi-Perspective Analysis** (Concurrent)
+   - Technical analyst provides technical view
+   - Business analyst provides business view
+   - Results aggregated in parallel
+
+Example:
 ```python
-from pydantic_settings import BaseSettings
-import os
+from src.workflows import document_workflow_service
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
-
-    # Azure OpenAI Configuration
-    azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
-    azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-    azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
-
-    # Agent Configuration
-    agent_name: str = os.getenv("AGENT_NAME", "PythonSpecializedAgent")
-    agent_instructions: str = os.getenv(
-        "AGENT_INSTRUCTIONS",
-        "You are a specialized Python agent that helps with data analysis, machine learning, and Python ecosystem tasks.",
-    )
-
-    # API Configuration
-    api_port: int = int(os.getenv("API_PORT", "8000"))
-    api_host: str = os.getenv("API_HOST", "0.0.0.0")
-    require_auth: bool = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"  # Ignore extra fields in .env file
-
-settings = Settings()
+result = await document_workflow_service.run_document_workflow(
+    "Write about cloud computing"
+)
 ```
 
-### Phase 3: JWT Validation & OBO Flow
+### ⏳ Future: JWT Validation & OBO Flow
 
-**File: `src/auth.py`**
+**Planned: `src/auth.py`**
 ```python
 from fastapi import HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -474,9 +390,9 @@ async def get_obo_token(
     return await obo_service.acquire_token_on_behalf_of(user_token, target_scopes)
 ```
 
-### Phase 4: Full Integration
+### ⏳ Future: Full Integration with Authentication
 
-**Updated `src/api.py` with authentication**
+**Planned: Update `src/api.py` with authentication**
 ```python
 from fastapi import APIRouter, HTTPException, Depends, Security
 from fastapi.security import HTTPAuthorizationCredentials
@@ -573,57 +489,56 @@ uv run pytest tests/test_api.py -v
 uv build
 ```
 
-## Workflow Visualizer
+## Examples
 
-The Microsoft Agent Framework includes a built-in development UI (`devui`) that provides a visual workflow debugger for your agents. This allows you to:
+The `examples/` folder contains sample implementations demonstrating different Agent Framework patterns:
 
-- Visualize agent execution flows in real-time
-- Debug agent interactions and responses
-- Test agents interactively in a web interface
-- Inspect agent state and configuration
-
-### Running the Workflow Visualizer
-
-The visualizer will **autodiscover** agents and workflows in your project:
+### `agent_example.py`
+Simple agent with Azure OpenAI Responses client. Shows basic agent creation and configuration.
 
 ```bash
-# From the python-agent root directory
-uv run devui src/ --port 8181
+# Run with devui
+cd examples
+python agent_example.py
 ```
 
-This will:
-1. Scan the `src/` directory for agents and workflows
-2. Start the devui server on port 8181
-3. Open the visualizer in your default web browser
+### `workflow_simple_example.py`
+Foundation workflow patterns showing:
+- Custom executor classes vs function-based executors
+- Workflow builder API (edges, start executor)
+- Message passing between nodes
+- Yielding workflow outputs
 
-### Example Agent
+**Key concepts**:
+- `UpperCase` executor (class-based)
+- `reverse_text` executor (function-based)
+- Sequential processing: uppercase → reverse
 
-See `src/agent_example.py` for a sample agent that can be discovered by devui:
+### `workflow_agent_example.py`
+Multi-agent workflow coordination demonstrating:
+- Writer and Reviewer agents working sequentially
+- Agent-based executors in workflows
+- Non-streaming workflow execution
 
-```python
-from agent_framework.azure import AzureOpenAIResponsesClient
-from azure.identity import AzureCliCredential
-from config import settings
+**Example workflow**:
+1. Writer agent creates/edits content
+2. Reviewer agent evaluates and provides feedback
+3. Workflow completes when idle
 
-agent = AzureOpenAIResponsesClient(
-    endpoint=settings.azure_openai_endpoint,
-    deployment_name=settings.azure_openai_deployment,
-    api_version="2025-03-01-preview",
-    credential=AzureCliCredential(),
-).create_agent(
-    name="HaikuBot",
-    instructions="You are an upbeat assistant that writes beautifully.",
-)
-```
+### Running Examples with DevUI
 
-**Alternative**: You can also run the example directly by uncommenting the `serve()` line in `agent_example.py`:
+The Microsoft Agent Framework includes a visual workflow debugger:
 
 ```bash
-# Uncomment: serve(entities=[agent], auto_open=True)
-uv run python src/agent_example.py
+# Autodiscover and visualize agents/workflows
+uv run devui examples/ --port 8181
+
+# Or run specific examples with built-in serve() calls
+# (uncomment serve() line in the example file first)
+python examples/workflow_agent_example.py
 ```
 
-**Note**: Make sure you're authenticated with Azure CLI (`az login`) before running the visualizer.
+**Note**: Authenticate with `az login` before running examples.
 
 ## API Endpoints
 
@@ -638,24 +553,54 @@ Health check endpoint.
 ```
 
 ### `GET /agent`
-Simple agent status check (Phase 1).
+Agent status and feature information.
 
 **Response**:
 ```json
 {
-  "message": "it's alive",
-  "status": "healthy"
+  "message": "Microsoft Agent Framework enabled",
+  "status": "healthy",
+  "agent_type": "microsoft-agent-framework",
+  "agent_name": "PythonSpecializedAgent",
+  "features": {
+    "tools": ["get_weather", "calculate", "search_files"],
+    "workflows": ["document_processing", "concurrent_analysis"],
+    "authentication": "Azure OpenAI with DefaultAzureCredential"
+  }
 }
 ```
 
 ### `POST /agent`
-Main agent interaction endpoint.
+Main agent interaction endpoint with Microsoft Agent Framework.
 
 **Request**:
 ```json
 {
-  "message": "Hello, I need help with Python",
+  "message": "What is the weather in Seattle?",
   "conversation_id": "optional-uuid",
+  "metadata": {"request_id": "abc123"}
+}
+```
+
+**Response**:
+```json
+{
+  "message": "The weather in Seattle is partly cloudy with a temperature of 18°C (64°F)...",
+  "status": "success",
+  "agent_type": "microsoft-agent-framework",
+  "conversation_id": "optional-uuid",
+  "metadata": {"request_id": "abc123"}
+}
+```
+
+### `POST /workflow/document`
+Sequential document processing workflow.
+
+**Request**:
+```json
+{
+  "input": "Write about artificial intelligence",
+  "workflow_params": {},
   "metadata": {}
 }
 ```
@@ -663,20 +608,36 @@ Main agent interaction endpoint.
 **Response**:
 ```json
 {
-  "message": "it's alive",
-  "status": "healthy",
-  "agent_type": "python-fastapi",
-  "conversation_id": "optional-uuid",
+  "result": "Artificial Intelligence: A Comprehensive Overview\n\n[Generated and edited content...]",
+  "status": "success",
+  "workflow_type": "sequential-document-processing",
+  "metadata": {"steps": ["writer", "editor"]}
+}
+```
+
+### `POST /workflow/analysis`
+Concurrent multi-perspective analysis workflow.
+
+**Request**:
+```json
+{
+  "input": "Cloud computing migration",
+  "workflow_params": {},
   "metadata": {}
 }
 ```
 
-**With Authentication (Phase 4)**:
-```bash
-curl -X POST http://localhost:8000/agent \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Help me with Python"}'
+**Response**:
+```json
+{
+  "result": "Multi-Perspective Analysis: Cloud computing migration\n\n=== Technical Perspective ===\n...\n\n=== Business Perspective ===\n...",
+  "status": "success",
+  "workflow_type": "concurrent-multi-perspective-analysis",
+  "metadata": {
+    "perspectives": ["technical", "business"],
+    "execution": "parallel"
+  }
+}
 ```
 
 ## Security Notes
@@ -688,16 +649,18 @@ curl -X POST http://localhost:8000/agent \
 5. **Log OBO exchanges** for audit trails (without exposing tokens)
 6. **Set appropriate CORS** policies
 
-## Next Steps
+## Implementation Roadmap
 
-1. ✅ Phase 1: Basic `/agent` endpoint returning "it's alive"
-2. ✅ Phase 2: Integrate Microsoft Agent Framework with multiple backend options
-   - ✅ Claude CLI integration (shell command)
-   - ✅ Local LLM HTTP support (Ollama)
-   - ✅ OpenAI-compatible API support (LM Studio, etc.)
-3. ⏳ Phase 3: Implement JWT validation and OBO flow
-4. ⏳ Phase 4: Full multi-agent orchestration
-5. ⏳ Phase 5: Production hardening and deployment
+1. ✅ **Phase 1**: Basic FastAPI service with health checks
+2. ✅ **Phase 2**: Microsoft Agent Framework integration
+   - Azure OpenAI client with authentication
+   - Function tools (weather, calculate, search)
+   - Thread-based conversation management
+3. ✅ **Phase 3**: Workflow orchestration
+   - Sequential document processing
+   - Concurrent multi-perspective analysis
+4. ⏳ **Phase 4**: JWT validation and OBO authentication flow
+5. ⏳ **Phase 5**: Production hardening and deployment
 
 ## Troubleshooting
 
