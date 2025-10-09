@@ -271,16 +271,58 @@ format-python-agent: ## Format Python agent code
 	@cd python-agent && uv run --prerelease=allow black src/ tests/
 	@echo "$(GREEN)✓ Python agent formatted$(NC)"
 
+##@ Monitoring & Observability
+
+monitoring-up: ## Start the monitoring stack (Grafana, Prometheus, Tempo, OTEL Collector)
+	@echo "$(CYAN)Starting monitoring stack...$(NC)"
+	@cd monitoring && docker compose up -d
+	@echo "$(GREEN)✓ Monitoring stack started$(NC)"
+	@echo ""
+	@echo "$(CYAN)Access monitoring services:$(NC)"
+	@echo "  $(GREEN)Grafana:$(NC)           http://localhost:3001 (admin/admin)"
+	@echo "  $(GREEN)Prometheus:$(NC)        http://localhost:9090"
+	@echo "  $(GREEN)OTEL Collector:$(NC)    http://localhost:4317 (gRPC), http://localhost:4318 (HTTP)"
+
+monitoring-down: ## Stop the monitoring stack
+	@echo "$(YELLOW)Stopping monitoring stack...$(NC)"
+	@cd monitoring && docker compose down
+	@echo "$(GREEN)✓ Monitoring stack stopped$(NC)"
+
+monitoring-restart: ## Restart the monitoring stack
+	@echo "$(CYAN)Restarting monitoring stack...$(NC)"
+	@cd monitoring && docker compose restart
+	@echo "$(GREEN)✓ Monitoring stack restarted$(NC)"
+
+monitoring-logs: ## Show logs from monitoring stack
+	@echo "$(CYAN)Monitoring stack logs (Ctrl+C to exit):$(NC)"
+	@cd monitoring && docker compose logs -f
+
+monitoring-status: ## Check status of monitoring containers
+	@echo "$(CYAN)Monitoring stack status:$(NC)"
+	@cd monitoring && docker compose ps
+
+monitoring-clean: ## Remove monitoring stack and volumes
+	@echo "$(YELLOW)Removing monitoring stack and all data...$(NC)"
+	@cd monitoring && docker compose down -v
+	@echo "$(GREEN)✓ Monitoring stack and data removed$(NC)"
+
 ##@ Information
 
 ports: ## Show port allocations
 	@echo "$(CYAN)Service Port Allocation:$(NC)"
 	@echo ""
+	@echo "$(YELLOW)Application Services:$(NC)"
 	@echo "  $(GREEN)Python Agent:$(NC)      http://localhost:8000"
 	@echo "  $(GREEN).NET Agent:$(NC)        http://localhost:5000"
 	@echo "  $(GREEN).NET Payroll API:$(NC)  http://localhost:5100"
 	@echo "  $(GREEN)Orchestrator:$(NC)      http://localhost:8001"
 	@echo "  $(GREEN)Frontend:$(NC)          http://localhost:3000"
+	@echo ""
+	@echo "$(YELLOW)Monitoring Services:$(NC)"
+	@echo "  $(GREEN)Grafana:$(NC)           http://localhost:3001"
+	@echo "  $(GREEN)Prometheus:$(NC)        http://localhost:9090"
+	@echo "  $(GREEN)Tempo:$(NC)             http://localhost:3200"
+	@echo "  $(GREEN)OTEL Collector:$(NC)    grpc://localhost:4317, http://localhost:4318"
 
 endpoints: ## Show available API endpoints
 	@echo "$(CYAN)Available Endpoints:$(NC)"

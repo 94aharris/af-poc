@@ -132,7 +132,15 @@ orchestrator/
    - Get your endpoint, deployment name, and API key
    - See [Azure OpenAI Documentation](https://learn.microsoft.com/en-us/azure/ai-services/openai/)
 
-3. **Start Required Services** (in separate terminals):
+3. **Monitoring Setup** (Optional - see [Monitoring & Observability](#monitoring--observability) section):
+   ```bash
+   # Start the monitoring stack (Jaeger, Grafana, Prometheus, Tempo)
+   make monitoring-up
+   ```
+
+   **Alternative**: If running locally in VS Code, you can use the **AI Toolkit extension** for trace visualization instead of the full monitoring stack.
+
+4. **Start Required Services** (in separate terminals):
    ```bash
    # Terminal 1: Python agent (for calculator tool)
    cd ../python-agent
@@ -223,6 +231,18 @@ PAYROLL_API_SCOPES=["api://payroll-api-id/.default"]
 PYTHON_AGENT_URL=http://localhost:8000
 DOTNET_AGENT_URL=http://localhost:5000
 PAYROLL_API_URL=http://localhost:5100
+```
+
+**Monitoring & Observability** (Optional):
+```bash
+# Enable OpenTelemetry tracing and metrics
+ENABLE_OTEL=true
+# Enable logging of sensitive data (prompts, responses, function arguments)
+ENABLE_SENSITIVE_DATA=false  # Set to true with caution
+# OTLP endpoint for telemetry export (OpenTelemetry Collector)
+OTLP_ENDPOINT=http://localhost:4317
+# VS Code AI Toolkit extension port (for local development)
+VS_CODE_EXTENSION_PORT=4317
 ```
 
 ### Running the Orchestrator
@@ -847,6 +867,121 @@ curl http://localhost:8001/health/agents
 - Verify `JWT_ISSUER` matches Azure AD tenant
 - Check token hasn't expired
 - Ensure frontend is requesting correct audience
+
+## Monitoring & Observability
+
+The orchestrator includes comprehensive OpenTelemetry instrumentation for traces and metrics. You have **two options** for viewing telemetry:
+
+### Option 1: Full Monitoring Stack (Recommended for Teams)
+
+The `monitoring/` directory contains a complete observability stack with Docker Compose:
+
+- **Jaeger UI** - Dedicated trace visualization (http://localhost:16686)
+- **Grafana** - Dashboards and metrics (http://localhost:3001)
+- **Tempo** - Distributed tracing backend
+- **Prometheus** - Metrics storage
+- **OpenTelemetry Collector** - Telemetry ingestion
+
+**Quick Start:**
+```bash
+# Start the full monitoring stack
+make monitoring-up
+
+# Configure orchestrator to send telemetry
+# In orchestrator/.env:
+ENABLE_OTEL=true
+OTLP_ENDPOINT=http://localhost:4317
+ENABLE_SENSITIVE_DATA=false
+
+# Restart orchestrator
+make run-orchestrator
+
+# Access trace viewers
+# Jaeger UI: http://localhost:16686 (recommended for trace exploration)
+# Grafana: http://localhost:3001 (login: admin/admin)
+```
+
+**What Gets Monitored:**
+- `invoke_agent <agent_name>` - Agent invocation operations
+- `chat <model_name>` - LLM chat completions
+- `execute_tool <function_name>` - Tool executions (get_user_info, get_user_pto, calculate)
+- Token usage (prompt, completion, total)
+- Operation duration and success/error rates
+
+**Available Commands:**
+```bash
+make monitoring-up         # Start the monitoring stack
+make monitoring-down       # Stop the monitoring stack
+make monitoring-restart    # Restart the monitoring stack
+make monitoring-logs       # View logs from all monitoring containers
+make monitoring-status     # Check status of monitoring containers
+make monitoring-clean      # Remove stack and all data volumes
+```
+
+See [monitoring/README.md](../monitoring/README.md) for complete documentation.
+
+### Option 2: VS Code AI Toolkit Extension (For Local Development)
+
+If you're running the orchestrator locally in **VS Code**, you can use the **AI Toolkit extension** for lightweight trace visualization without Docker:
+
+1. **Install the AI Toolkit extension** in VS Code
+2. **Configure orchestrator** to send traces to the extension:
+   ```bash
+   # In orchestrator/.env:
+   ENABLE_OTEL=true
+   OTLP_ENDPOINT=http://localhost:4317
+   VS_CODE_EXTENSION_PORT=4317
+   ```
+3. **Open AI Toolkit panel** in VS Code to view traces in real-time
+
+**When to use each option:**
+- **VS Code AI Toolkit**: Solo development, quick debugging, minimal setup
+- **Full Monitoring Stack**: Team environments, production-like monitoring, historical analysis, dashboards
+
+### Telemetry Configuration
+
+**Environment Variables:**
+```bash
+# Enable/disable OpenTelemetry instrumentation
+ENABLE_OTEL=true
+
+# Log prompts, responses, and function arguments (use with caution in production)
+ENABLE_SENSITIVE_DATA=false
+
+# OTLP endpoint for the collector or VS Code extension
+OTLP_ENDPOINT=http://localhost:4317
+
+# Azure Application Insights (optional, for cloud export)
+APPLICATIONINSIGHTS_CONNECTION_STRING=
+```
+
+**Custom Instrumentation:**
+
+You can add custom spans and metrics in your code:
+
+```python
+from agent_framework.observability import get_tracer, get_meter
+
+tracer = get_tracer()
+meter = get_meter()
+
+# Custom span
+with tracer.start_as_current_span("my_custom_operation"):
+    # Your code here
+    pass
+
+# Custom counter
+counter = meter.create_counter("my_custom_counter")
+counter.add(1, {"operation": "process_request"})
+```
+
+**Troubleshooting:**
+
+If telemetry isn't appearing:
+1. Check `ENABLE_OTEL=true` in `.env`
+2. Verify monitoring stack is running: `make monitoring-status`
+3. Check collector logs: `make monitoring-logs`
+4. Ensure orchestrator restarted after config changes
 
 ## Feature Highlights
 

@@ -6,6 +6,11 @@ from src.api import router
 from src.config import settings
 import logging
 
+# Setup observability for agent-framework
+from agent_framework.observability import setup_observability
+
+setup_observability()
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

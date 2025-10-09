@@ -1,11 +1,17 @@
 """Configuration management for orchestrator service."""
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 
 class Settings(BaseSettings):
     """Application configuration."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="allow"
+    )
 
     # Azure AD Configuration
     AZURE_TENANT_ID: str = ""
@@ -54,10 +60,6 @@ class Settings(BaseSettings):
         "Use the calculate tool for mathematical calculations and data analysis. "
         "Always provide clear and helpful responses."
     )
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 settings = Settings()
