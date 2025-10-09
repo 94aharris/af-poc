@@ -28,6 +28,7 @@ obj/
 *.pfx
 *.p12
 appsettings.Development.json
+appsettings.local.json
 secrets.json
 
 # IDEs

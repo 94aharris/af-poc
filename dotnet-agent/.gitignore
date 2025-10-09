@@ -33,6 +33,7 @@ artifacts/
 
 # User secrets
 appsettings.Development.json
+appsettings.local.json
 secrets.json
 
 # Environment variables
